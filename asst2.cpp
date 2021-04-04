@@ -263,7 +263,7 @@ static void drawStuff() {
     sendProjectionMatrix(curSS, projmat);
 
     // use the skyRbt as the eyeRbt
-    const Matrix4 eyeRbt = [](){
+    const Matrix4 eyeRbt = []() {
         switch (current_view_mode) {
             case view_mode::sky_camera:
                 return g_skyRbt;
@@ -382,7 +382,21 @@ static void keyboard(const unsigned char key, const int x, const int y) {
             g_activeShader ^= 1;
             break;
         case 'v':
-            current_view_mode = view_mode((static_cast<int>(current_view_mode) + 1) % static_cast<int>(view_mode::COUNT));
+            current_view_mode = view_mode(
+                    (static_cast<int>(current_view_mode) + 1) % static_cast<int>(view_mode::COUNT));
+            auto current_eye_name = []() {
+                switch (current_view_mode) {
+                    case view_mode::sky_camera:
+                        return "Sky";
+                    case view_mode::cube_1:
+                        return "Object 0";
+                    case view_mode::cube_2:
+                        return "Object 1";
+                    default:
+                        assert(false);
+                }
+            }();
+            std::cout << "Active eye is " << current_eye_name << std::endl;
             break;
     }
     glutPostRedisplay();
