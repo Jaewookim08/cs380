@@ -183,12 +183,15 @@ static Matrix4 g_skyRbt = Matrix4::makeTranslation(Cvec3(0.0, 0.25, 4.0));
 
 static constexpr float object_displacement = 0.8;
 static std::array<Matrix4, 2> g_objectRbt = {Matrix4::makeTranslation(Cvec3(-object_displacement, 0, 0)),
-                                             Matrix4::makeTranslation(Cvec3(object_displacement, 0, 0))};  // currently only 1 obj is defined
+                                             Matrix4::makeTranslation(Cvec3(object_displacement, 0,
+                                                                            0))};  // currently only 1 obj is defined
 static std::array<Cvec3f, 2> g_objectColors = {Cvec3f(1, 0, 0), Cvec3f(0, 0, 1)};
 
-enum class view_mode{
+
+enum class view_mode {
     sky_camera, cube_1, cube_2, COUNT
 };
+static view_mode current_view_mode = view_mode::sky_camera;
 
 
 ///////////////// END OF G L O B A L S //////////////////////////////////////////////////
@@ -260,7 +263,19 @@ static void drawStuff() {
     sendProjectionMatrix(curSS, projmat);
 
     // use the skyRbt as the eyeRbt
-    const Matrix4 eyeRbt = g_skyRbt;
+    const Matrix4 eyeRbt = [](){
+        switch (current_view_mode) {
+            case view_mode::sky_camera:
+                return g_skyRbt;
+            case view_mode::cube_1:
+                return g_objectRbt[0];
+            case view_mode::cube_2:
+                return g_objectRbt[1];
+            default:
+                assert(false);
+        }
+    }();
+
     const Matrix4 invEyeRbt = inv(eyeRbt);
 
     const Cvec3 eyeLight1 = Cvec3(invEyeRbt * Cvec4(g_light1, 1)); // g_light1 position in eye coordinates
@@ -280,7 +295,7 @@ static void drawStuff() {
 
     // draw cubes
     // ==========
-    for (int i=0; i<2; i++){
+    for (int i = 0; i < 2; i++) {
         MVM = invEyeRbt * g_objectRbt[i];
         NMVM = normalMatrix(MVM);
         sendModelViewNormalMatrix(curSS, MVM, NMVM);
@@ -365,6 +380,9 @@ static void keyboard(const unsigned char key, const int x, const int y) {
             break;
         case 'f':
             g_activeShader ^= 1;
+            break;
+        case 'v':
+            current_view_mode = view_mode((static_cast<int>(current_view_mode) + 1) % static_cast<int>(view_mode::COUNT));
             break;
     }
     glutPostRedisplay();
