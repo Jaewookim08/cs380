@@ -49,8 +49,8 @@ void makePlane(float size, VtxOutIter vtxIter, IdxOutIter idxIter) {
 }
 
 inline void getCubeVbIbLen(int& vbLen, int& ibLen) {
-  vbLen = 24;
-  ibLen = 36;
+  vbLen = 24; // 8 * 3
+  ibLen = 36; // 3(삼각형당 점) * 2(면당 삼각형) * 6(면)
 }
 
 template<typename VtxOutIter, typename IdxOutIter>

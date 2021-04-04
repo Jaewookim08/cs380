@@ -23,6 +23,9 @@ else
   CXXFLAGS += -g
 endif
 
+CXXFLAGS += -std=c++17
+
+
 CXX = g++ 
 
 OBJ = $(BASE).o ppm.o glsupport.o
