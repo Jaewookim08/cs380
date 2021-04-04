@@ -188,15 +188,44 @@ static std::array<Matrix4, 2> g_objectRbt = {Matrix4::makeTranslation(Cvec3(-obj
 static std::array<Cvec3f, 2> g_objectColors = {Cvec3f(1, 0, 0), Cvec3f(0, 0, 1)};
 
 
-enum class view_mode {
-    sky_camera, cube_1, cube_2, COUNT
-};
-static view_mode current_view_mode = view_mode::sky_camera;
+namespace asd {
+    enum class object_enum {
+        sky_camera, cube_1, cube_2, COUNT
+    };
+    struct manipulation_setting {
+        bool can_manipulate = false;
+        Matrix4 respect_frame;
+    };
+}
 
+static asd::object_enum current_camera = asd::object_enum::sky_camera;
+static asd::object_enum current_manipulating = asd::object_enum::sky_camera;
+static bool do_skysky = false;
 
 ///////////////// END OF G L O B A L S //////////////////////////////////////////////////
 
+auto& get_rbt(asd::object_enum view_mode) {
+    switch (view_mode) {
+        case asd::object_enum::sky_camera:
+            return g_skyRbt;
+        case asd::object_enum::cube_1:
+            return g_objectRbt[0];
+        case asd::object_enum::cube_2:
+            return g_objectRbt[1];
+        default:
+            assert(false);
+    }
+};
 
+asd::manipulation_setting get_manipulation_setting() {
+    if (current_manipulating == asd::object_enum::sky_camera) {
+        if (current_camera != asd::object_enum::sky_camera)
+            return asd::manipulation_setting{false, Matrix4{}};
+        return asd::manipulation_setting{true, do_skysky ? g_skyRbt: linFact(g_skyRbt) };
+    } else {
+        return asd::manipulation_setting{true, transFact(get_rbt(::current_manipulating)) * linFact(get_rbt(::current_camera))};
+    }
+}
 
 
 static void initGround() {
@@ -264,12 +293,12 @@ static void drawStuff() {
 
     // use the skyRbt as the eyeRbt
     const Matrix4 eyeRbt = []() {
-        switch (current_view_mode) {
-            case view_mode::sky_camera:
+        switch (current_camera) {
+            case asd::object_enum::sky_camera:
                 return g_skyRbt;
-            case view_mode::cube_1:
+            case asd::object_enum::cube_1:
                 return g_objectRbt[0];
-            case view_mode::cube_2:
+            case asd::object_enum::cube_2:
                 return g_objectRbt[1];
             default:
                 assert(false);
@@ -339,8 +368,34 @@ static void motion(const int x, const int y) {
     }
 
     if (g_mouseClickDown) {
-        g_objectRbt[0] *= m; // Simply right-multiply is WRONG
-        glutPostRedisplay(); // we always redraw if we changed the scene
+        const auto& settings = ::get_manipulation_setting();
+        if (settings.can_manipulate){
+            auto& target_rbt = get_rbt(current_manipulating);
+            bool invert_translation = false;
+            bool invert_linear = false;
+
+            if (::current_manipulating == asd::object_enum::sky_camera){
+                if (::current_camera == asd::object_enum::sky_camera && !do_skysky)
+                    invert_translation = true;
+                invert_linear = true;
+            }else if (::current_camera == ::current_manipulating){
+                invert_linear = true;
+//                invert_translation = true;
+            }
+
+            {
+                auto trans_part = transFact(m);
+                auto lin_part = linFact(m);
+                if (invert_translation)
+                    trans_part = inv(trans_part);
+                if (invert_linear)
+                    lin_part = inv(lin_part);
+                m = trans_part * lin_part;
+            }
+
+            target_rbt = settings.respect_frame * m * inv(settings.respect_frame) * target_rbt;
+            glutPostRedisplay(); // we always redraw if we changed the scene
+        }
     }
 
     g_mouseClickX = x;
@@ -366,6 +421,18 @@ static void mouse(const int button, const int state, const int x, const int y) {
 
 
 static void keyboard(const unsigned char key, const int x, const int y) {
+    auto object_to_name = [](asd::object_enum object) {
+        switch (object) {
+            case asd::object_enum::sky_camera:
+                return "Sky";
+            case asd::object_enum::cube_1:
+                return "Object 0";
+            case asd::object_enum::cube_2:
+                return "Object 1";
+            default:
+                assert(false);
+        }
+    };
     switch (key) {
         case 27:
             exit(0);                                  // ESC
@@ -381,23 +448,24 @@ static void keyboard(const unsigned char key, const int x, const int y) {
         case 'f':
             g_activeShader ^= 1;
             break;
-        case 'v':
-            current_view_mode = view_mode(
-                    (static_cast<int>(current_view_mode) + 1) % static_cast<int>(view_mode::COUNT));
-            auto current_eye_name = []() {
-                switch (current_view_mode) {
-                    case view_mode::sky_camera:
-                        return "Sky";
-                    case view_mode::cube_1:
-                        return "Object 0";
-                    case view_mode::cube_2:
-                        return "Object 1";
-                    default:
-                        assert(false);
-                }
-            }();
-            std::cout << "Active eye is " << current_eye_name << std::endl;
+        case 'v': {
+            current_camera = asd::object_enum(
+                    (static_cast<int>(current_camera) + 1) % static_cast<int>(asd::object_enum::COUNT));
+            std::cout << "Active eye is " << object_to_name(current_camera) << std::endl;
             break;
+        }
+        case 'o': {
+            current_manipulating = asd::object_enum(
+                    (static_cast<int>(current_manipulating) + 1) % static_cast<int>(asd::object_enum::COUNT));
+            std::cout << "Active object is " << object_to_name(current_manipulating) << std::endl;
+            break;
+        }
+        case 'm': {
+            ::do_skysky = !do_skysky;
+            std::cout << "Editing sky eye w.r.t. " << (::do_skysky ? "sky-sky" : "world-sky")
+                      << " frame" << std::endl;
+            break;
+        }
     }
     glutPostRedisplay();
 }
@@ -460,6 +528,7 @@ int main(int argc, char* argv[]) {
         initGLState();
         initShaders();
         initGeometry();
+
 
         glutMainLoop();
         return 0;
