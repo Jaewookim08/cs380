@@ -189,6 +189,7 @@ static std::array<RigTForm, 2> g_objectRbt = {RigTForm{Cvec3(-object_displacemen
                                               RigTForm{Cvec3(object_displacement, 0,
                                                              0)}};// currently only 1 obj is defined
 static std::optional<RigTForm> g_arcballRbt;
+static RigTForm g_eyeRbt;
 
 static std::array<Cvec3f, 2> g_objectColors = {Cvec3f(1, 0, 0), Cvec3f(0, 0, 1)};
 
@@ -309,7 +310,7 @@ static void drawStuff() {
     sendProjectionMatrix(curSS, projmat);
 
     // get eyeRbt
-    const auto eyeRbt = []() {
+    g_eyeRbt = []() {
         switch (current_camera) {
             case asd::object_enum::sky_camera:
                 return g_skyRbt;
@@ -336,7 +337,7 @@ static void drawStuff() {
     }();
 
 
-    const auto invEyeRbt = inv(eyeRbt);
+    const auto invEyeRbt = inv(g_eyeRbt);
 
     const Cvec3 eyeLight1 = Cvec3(invEyeRbt * Cvec4(g_light1, 1)); // g_light1 position in eye coordinates
     const Cvec3 eyeLight2 = Cvec3(invEyeRbt * Cvec4(g_light2, 1)); // g_light2 position in eye coordinates
@@ -371,8 +372,9 @@ static void drawStuff() {
         const auto arcballRbt = g_arcballRbt.value();
 
         // if not translating update arcballScale
-        if (!(g_mouseMClickButton ||(g_mouseLClickButton && g_mouseRClickButton)))
-            g_arcballScale = getScreenToEyeScale((invEyeRbt * arcballRbt).getTranslation()[2], g_frustFovY, g_windowHeight);
+        if (!(g_mouseMClickButton || (g_mouseLClickButton && g_mouseRClickButton)))
+            g_arcballScale = getScreenToEyeScale((invEyeRbt * arcballRbt).getTranslation()[2], g_frustFovY,
+                                                 g_windowHeight);
 
         // draw arcball
         Matrix4 MVM = rigTFormToMatrix(invEyeRbt * arcballRbt)
@@ -416,7 +418,30 @@ static void motion(const int x, const int y) {
     RigTForm rigT;
     const auto translation_scale = g_arcballRbt.has_value() ? g_arcballScale : 0.01;
     if (g_mouseLClickButton && !g_mouseRClickButton) { // left button down?
-        rigT = RigTForm{Quat::makeXRotation(-dy) * Quat::makeYRotation(dx)};
+        if (g_arcballRbt.has_value()) {
+            Cvec2 arcball_coord = getScreenSpaceCoord((inv(g_eyeRbt) * g_arcballRbt.value()).getTranslation(),
+                                                      makeProjectionMatrix(), g_frustNear, g_frustFovY,
+                                                      g_windowWidth, g_windowHeight);
+//            std::cout << arcball_coord[0] << " " << arcball_coord[1] << std::endl;
+//            std::cout << x << " " << y << std::endl;
+            auto get_vec3 = [](Cvec2 vec2) {
+                auto sqr = [](double d) { return d * d; };
+                auto ret = Cvec3{};
+                ret[0] = vec2[0];
+                ret[1] = vec2[1];
+                auto cc = sqr(g_arcballScreenRadius) - sqr(vec2[0]) - sqr(vec2[1]);
+                ret[2] = cc > 0 ? std::sqrt(cc) : 0;
+                return ret.normalize();
+            };
+
+            auto v2 = get_vec3(Cvec2{x, g_windowHeight - y - 1} - arcball_coord);
+            auto v1 = get_vec3(Cvec2{g_mouseClickX, g_mouseClickY} - arcball_coord);
+
+            rigT = RigTForm{Quat{dot(v1, v2), cross(v1, v2)}};
+//            rigT = RigTForm{Quat::makeXRotation(-dy) * Quat::makeYRotation(dx)};
+
+        } else
+            rigT = RigTForm{Quat::makeXRotation(-dy) * Quat::makeYRotation(dx)};
     } else if (g_mouseRClickButton && !g_mouseLClickButton) { // right button down?
         rigT = RigTForm{Cvec3(dx, dy, 0) * translation_scale};
     } else if (g_mouseMClickButton ||
