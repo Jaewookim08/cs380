@@ -176,7 +176,7 @@ struct Geometry {
 
 
 // Vertex buffer and index buffer associated with the ground and cube geometry
-static std::shared_ptr<Geometry> g_ground, g_cube;
+static std::shared_ptr<Geometry> g_ground, g_cube, g_arcball;
 
 // --------- Scene
 
@@ -186,7 +186,8 @@ static RigTForm g_skyRbt = RigTForm{Cvec3(0.0, 0.25, 4.0)};
 static constexpr float object_displacement = 0.8;
 static std::array<RigTForm, 2> g_objectRbt = {RigTForm{Cvec3(-object_displacement, 0, 0)},
                                               RigTForm{Cvec3(object_displacement, 0,
-                                                             0)}};  // currently only 1 obj is defined
+                                                             0)}};// currently only 1 obj is defined
+static RigTForm g_arcballRbt = RigTForm{Cvec3(0., 0., 0.)};
 static std::array<Cvec3f, 2> g_objectColors = {Cvec3f(1, 0, 0), Cvec3f(0, 0, 1)};
 
 
@@ -204,6 +205,8 @@ static asd::object_enum current_camera = asd::object_enum::sky_camera;
 static asd::object_enum current_manipulating = asd::object_enum::sky_camera;
 static bool do_skysky = false;
 
+
+static float g_arcballScreenRadius = 1.f;
 ///////////////// END OF G L O B A L S //////////////////////////////////////////////////
 
 auto &get_rbt(asd::object_enum view_mode) {
@@ -251,6 +254,13 @@ static void initCubes() {
 
     makeCube(1, vtx.begin(), idx.begin());
     g_cube.reset(new Geometry(&vtx[0], &idx[0], vbLen, ibLen));
+}
+
+static void initArcball() {
+    std::vector<VertexPN> vtx;
+    std::vector<unsigned short> idx;
+    makeSphere(1, 20, 20, std::back_inserter(vtx), std::back_inserter(idx));
+    g_arcball = std::make_shared<Geometry>(&vtx[0], &idx[0], vtx.size(), idx.size());
 }
 
 // takes a projection matrix and send to the the shaders
@@ -316,25 +326,44 @@ static void drawStuff() {
     safe_glUniform3f(curSS.h_uLight, eyeLight1[0], eyeLight1[1], eyeLight1[2]);
     safe_glUniform3f(curSS.h_uLight2, eyeLight2[0], eyeLight2[1], eyeLight2[2]);
 
-    // draw ground
-    // ===========
-    //
-    const RigTForm groundRbt = RigTForm();  // identity
-    Matrix4 MVM = rigTFormToMatrix((invEyeRbt * groundRbt));
-    Matrix4 NMVM = normalMatrix(MVM);
-    sendModelViewNormalMatrix(curSS, MVM, NMVM);
-    safe_glUniform3f(curSS.h_uColor, 0.1, 0.95, 0.1); // set color
-    g_ground->draw(curSS);
-
-    // draw cubes
-    // ==========
-    for (int i = 0; i < 2; i++) {
-        MVM = rigTFormToMatrix(invEyeRbt * g_objectRbt[i]);
-        NMVM = normalMatrix(MVM);
+    {
+        // draw ground
+        // ===========
+        //
+        const RigTForm groundRbt = RigTForm();  // identity
+        Matrix4 MVM = rigTFormToMatrix((invEyeRbt * groundRbt));
+        Matrix4 NMVM = normalMatrix(MVM);
         sendModelViewNormalMatrix(curSS, MVM, NMVM);
-        safe_glUniform3f(curSS.h_uColor, g_objectColors[i][0], g_objectColors[i][1], g_objectColors[i][2]);
-        g_cube->draw(curSS);
+        safe_glUniform3f(curSS.h_uColor, 0.1, 0.95, 0.1); // set color
+        g_ground->draw(curSS);
     }
+
+    {
+        // draw cubes
+        // ==========
+        for (int i = 0; i < 2; i++) {
+            Matrix4 MVM = rigTFormToMatrix(invEyeRbt * g_objectRbt[i]);
+            Matrix4 NMVM = normalMatrix(MVM);
+            sendModelViewNormalMatrix(curSS, MVM, NMVM);
+            safe_glUniform3f(curSS.h_uColor, g_objectColors[i][0], g_objectColors[i][1], g_objectColors[i][2]);
+            g_cube->draw(curSS);
+        }
+    }
+
+    {
+        // draw arcball
+        const auto arcballScale = 0.001f;
+        Matrix4 MVM = Matrix4::makeScale(Cvec3{arcballScale * g_arcballScreenRadius}) *
+                      rigTFormToMatrix(invEyeRbt * g_arcballRbt);
+        Matrix4 NMVM = normalMatrix(MVM);
+
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        sendModelViewNormalMatrix(curSS, MVM, NMVM);
+        safe_glUniform3f(curSS.h_uColor, 1., 1., 1.);
+        g_arcball->draw(curSS);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    }
+
 }
 
 static void display() {
@@ -351,6 +380,7 @@ static void display() {
 static void reshape(const int w, const int h) {
     g_windowWidth = w;
     g_windowHeight = h;
+    g_arcballScreenRadius = 0.25f * static_cast<float>(std::fmin(g_windowWidth, g_windowHeight));
     glViewport(0, 0, w, h);
     std::cerr << "Size of window is now " << w << "x" << h << std::endl;
     updateFrustFovY();
@@ -363,7 +393,9 @@ static void motion(const int x, const int y) {
 
     RigTForm rigT;
     if (g_mouseLClickButton && !g_mouseRClickButton) { // left button down?
-        rigT = RigTForm{Quat::makeXRotation(-dy) * Quat::makeYRotation(dx)};
+        if ((::current_camera == asd::object_enum::sky_camera && ::current_manipulating == asd::object_enum::sky_camera
+             && !::do_skysky))
+            rigT = RigTForm{Quat::makeXRotation(-dy) * Quat::makeYRotation(dx)};
     } else if (g_mouseRClickButton && !g_mouseLClickButton) { // right button down?
         rigT = RigTForm{Cvec3(dx, dy, 0) * 0.01};
     } else if (g_mouseMClickButton ||
@@ -517,6 +549,7 @@ static void initShaders() {
 static void initGeometry() {
     initGround();
     initCubes();
+    initArcball();
 }
 
 int main(int argc, char *argv[]) {
