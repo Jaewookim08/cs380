@@ -26,6 +26,7 @@
 #include "geometrymaker.h"
 #include "ppm.h"
 #include "glsupport.h"
+#include "rigtform.h"
 
 
 // G L O B A L S ///////////////////////////////////////////////////
