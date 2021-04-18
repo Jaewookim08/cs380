@@ -27,6 +27,7 @@
 #include "ppm.h"
 #include "glsupport.h"
 #include "rigtform.h"
+#include "arcball.h"
 
 
 // G L O B A L S ///////////////////////////////////////////////////
@@ -187,7 +188,8 @@ static constexpr float object_displacement = 0.8;
 static std::array<RigTForm, 2> g_objectRbt = {RigTForm{Cvec3(-object_displacement, 0, 0)},
                                               RigTForm{Cvec3(object_displacement, 0,
                                                              0)}};// currently only 1 obj is defined
-static RigTForm g_arcballRbt = RigTForm{Cvec3(0., 0., 0.)};
+static std::optional<RigTForm> g_arcballRbt;
+
 static std::array<Cvec3f, 2> g_objectColors = {Cvec3f(1, 0, 0), Cvec3f(0, 0, 1)};
 
 
@@ -206,7 +208,8 @@ static asd::object_enum current_manipulating = asd::object_enum::sky_camera;
 static bool do_skysky = false;
 
 
-static float g_arcballScreenRadius = 1.f;
+static double g_arcballScreenRadius = 1.f;
+static double g_arcballScale = 0.001f;
 ///////////////// END OF G L O B A L S //////////////////////////////////////////////////
 
 auto &get_rbt(asd::object_enum view_mode) {
@@ -259,7 +262,7 @@ static void initCubes() {
 static void initArcball() {
     std::vector<VertexPN> vtx;
     std::vector<unsigned short> idx;
-    makeSphere(1, 20, 20, std::back_inserter(vtx), std::back_inserter(idx));
+    makeSphere(1, 15, 15, std::back_inserter(vtx), std::back_inserter(idx));
     g_arcball = std::make_shared<Geometry>(&vtx[0], &idx[0], vtx.size(), idx.size());
 }
 
@@ -305,7 +308,7 @@ static void drawStuff() {
     const Matrix4 projmat = makeProjectionMatrix();
     sendProjectionMatrix(curSS, projmat);
 
-    // use the skyRbt as the eyeRbt
+    // get eyeRbt
     const auto eyeRbt = []() {
         switch (current_camera) {
             case asd::object_enum::sky_camera:
@@ -318,6 +321,20 @@ static void drawStuff() {
                 assert(false);
         }
     }();
+
+    // update arcballRbt
+    g_arcballRbt = []() -> std::optional<RigTForm> {
+        if (::current_camera == asd::object_enum::sky_camera
+            && ::current_manipulating == asd::object_enum::sky_camera
+            && !::do_skysky)
+            return RigTForm{};
+        if ((::current_manipulating == asd::object_enum::cube_1
+             || ::current_manipulating == asd::object_enum::cube_2) && ::current_manipulating != ::current_camera)
+            return get_rbt(::current_manipulating);
+        // 위 경우를 제외하고는 rigTForm optional의 값은 없음.
+        return {};
+    }();
+
 
     const auto invEyeRbt = inv(eyeRbt);
 
@@ -350,16 +367,18 @@ static void drawStuff() {
         }
     }
 
-    {
+    if (g_arcballRbt.has_value()) {
+        const auto arcballRbt = g_arcballRbt.value();
+        // update arcballScale
+        g_arcballScale = getScreenToEyeScale((invEyeRbt * arcballRbt).getTranslation()[2], g_frustFovY, g_windowHeight);
         // draw arcball
-        const auto arcballScale = 0.001f;
-        Matrix4 MVM = Matrix4::makeScale(Cvec3{arcballScale * g_arcballScreenRadius}) *
-                      rigTFormToMatrix(invEyeRbt * g_arcballRbt);
+        Matrix4 MVM = rigTFormToMatrix(invEyeRbt * arcballRbt)
+                      * Matrix4::makeScale(Cvec3{g_arcballScale * g_arcballScreenRadius});
         Matrix4 NMVM = normalMatrix(MVM);
 
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         sendModelViewNormalMatrix(curSS, MVM, NMVM);
-        safe_glUniform3f(curSS.h_uColor, 1., 1., 1.);
+        safe_glUniform3f(curSS.h_uColor, 0., 0.7, 0.);
         g_arcball->draw(curSS);
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     }
@@ -380,7 +399,7 @@ static void display() {
 static void reshape(const int w, const int h) {
     g_windowWidth = w;
     g_windowHeight = h;
-    g_arcballScreenRadius = 0.25f * static_cast<float>(std::fmin(g_windowWidth, g_windowHeight));
+    g_arcballScreenRadius = 0.25 * std::fmin(g_windowWidth, g_windowHeight);
     glViewport(0, 0, w, h);
     std::cerr << "Size of window is now " << w << "x" << h << std::endl;
     updateFrustFovY();
@@ -392,15 +411,14 @@ static void motion(const int x, const int y) {
     const double dy = g_windowHeight - y - 1 - g_mouseClickY;
 
     RigTForm rigT;
+    const auto translation_scale = g_arcballRbt.has_value() ? g_arcballScale : 0.01;
     if (g_mouseLClickButton && !g_mouseRClickButton) { // left button down?
-        if ((::current_camera == asd::object_enum::sky_camera && ::current_manipulating == asd::object_enum::sky_camera
-             && !::do_skysky))
-            rigT = RigTForm{Quat::makeXRotation(-dy) * Quat::makeYRotation(dx)};
+        rigT = RigTForm{Quat::makeXRotation(-dy) * Quat::makeYRotation(dx)};
     } else if (g_mouseRClickButton && !g_mouseLClickButton) { // right button down?
-        rigT = RigTForm{Cvec3(dx, dy, 0) * 0.01};
+        rigT = RigTForm{Cvec3(dx, dy, 0) * translation_scale};
     } else if (g_mouseMClickButton ||
                (g_mouseLClickButton && g_mouseRClickButton)) {  // middle or (left and right) button down?
-        rigT = RigTForm{Cvec3(0, 0, -dy) * 0.01};
+        rigT = RigTForm{Cvec3(0, 0, -dy) * translation_scale};
     }
 
     if (g_mouseClickDown) {
