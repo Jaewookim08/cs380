@@ -369,8 +369,11 @@ static void drawStuff() {
 
     if (g_arcballRbt.has_value()) {
         const auto arcballRbt = g_arcballRbt.value();
-        // update arcballScale
-        g_arcballScale = getScreenToEyeScale((invEyeRbt * arcballRbt).getTranslation()[2], g_frustFovY, g_windowHeight);
+
+        // if not translating update arcballScale
+        if (!(g_mouseMClickButton ||(g_mouseLClickButton && g_mouseRClickButton)))
+            g_arcballScale = getScreenToEyeScale((invEyeRbt * arcballRbt).getTranslation()[2], g_frustFovY, g_windowHeight);
+
         // draw arcball
         Matrix4 MVM = rigTFormToMatrix(invEyeRbt * arcballRbt)
                       * Matrix4::makeScale(Cvec3{g_arcballScale * g_arcballScreenRadius});
@@ -472,6 +475,8 @@ static void mouse(const int button, const int state, const int x, const int y) {
     g_mouseMClickButton &= !(button == GLUT_MIDDLE_BUTTON && state == GLUT_UP);
 
     g_mouseClickDown = g_mouseLClickButton || g_mouseRClickButton || g_mouseMClickButton;
+
+    glutPostRedisplay();
 }
 
 
