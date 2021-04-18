@@ -24,7 +24,7 @@ public:
 
     explicit RigTForm(const Cvec3 &t) : RigTForm(t, Quat{}) {}
 
-    explicit RigTForm(const Quat &r) : RigTForm(Cvec3{0}, Quat{}) {}
+    explicit RigTForm(const Quat &r) : RigTForm{Cvec3{0}, r} {}
 
     [[nodiscard]] Cvec3 getTranslation() const {
         return t_;

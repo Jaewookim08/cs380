@@ -78,7 +78,7 @@ struct ShaderState {
     GLint h_aPosition;
     GLint h_aNormal;
 
-    ShaderState(const char* vsfn, const char* fsfn) {
+    ShaderState(const char *vsfn, const char *fsfn) {
         readAndCompileShader(program, vsfn, fsfn);
 
         const GLuint h = program; // short hand
@@ -103,9 +103,9 @@ struct ShaderState {
 };
 
 static const int g_numShaders = 2;
-static const char* const g_shaderFiles[g_numShaders][2] = {{"./shaders/basic-gl3.vshader", "./shaders/diffuse-gl3.fshader"},
+static const char *const g_shaderFiles[g_numShaders][2] = {{"./shaders/basic-gl3.vshader", "./shaders/diffuse-gl3.fshader"},
                                                            {"./shaders/basic-gl3.vshader", "./shaders/solid-gl3.fshader"}};
-static const char* const g_shaderFilesGl2[g_numShaders][2] = {{"./shaders/basic-gl2.vshader", "./shaders/diffuse-gl2.fshader"},
+static const char *const g_shaderFilesGl2[g_numShaders][2] = {{"./shaders/basic-gl2.vshader", "./shaders/diffuse-gl2.fshader"},
                                                               {"./shaders/basic-gl2.vshader", "./shaders/solid-gl2.fshader"}};
 static std::vector<std::shared_ptr<ShaderState>> g_shaderStates; // our global shader states
 
@@ -119,15 +119,16 @@ struct VertexPN {
     Cvec3f p, n;
 
     VertexPN() {}
+
     VertexPN(float x, float y, float z, float nx, float ny, float nz) : p(x, y, z), n(nx, ny, nz) {}
 
     // Define copy constructor and assignment operator from GenericVertex so we can
     // use make* functions from geometrymaker.h
-    VertexPN(const GenericVertex& v) {
+    VertexPN(const GenericVertex &v) {
         *this = v;
     }
 
-    VertexPN& operator=(const GenericVertex& v) {
+    VertexPN &operator=(const GenericVertex &v) {
         p = v.pos;
         n = v.normal;
         return *this;
@@ -138,7 +139,7 @@ struct Geometry {
     GlBufferObject vbo, ibo;
     int vboLen, iboLen;
 
-    Geometry(VertexPN* vtx, unsigned short* idx, int vboLen, int iboLen) {
+    Geometry(VertexPN *vtx, unsigned short *idx, int vboLen, int iboLen) {
         this->vboLen = vboLen;
         this->iboLen = iboLen;
 
@@ -150,7 +151,7 @@ struct Geometry {
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned short) * iboLen, idx, GL_STATIC_DRAW);
     }
 
-    void draw(const ShaderState& curSS) {
+    void draw(const ShaderState &curSS) {
         // Enable the attributes used by our shader
         safe_glEnableVertexAttribArray(curSS.h_aPosition);
         safe_glEnableVertexAttribArray(curSS.h_aNormal);
@@ -180,12 +181,12 @@ static std::shared_ptr<Geometry> g_ground, g_cube;
 // --------- Scene
 
 static const Cvec3 g_light1(2.0, 3.0, 14.0), g_light2(-2, -3.0, -5.0);  // define two lights positions in world space
-static Matrix4 g_skyRbt = Matrix4::makeTranslation(Cvec3(0.0, 0.25, 4.0));
+static RigTForm g_skyRbt = RigTForm{Cvec3(0.0, 0.25, 4.0)};
 
 static constexpr float object_displacement = 0.8;
-static std::array<Matrix4, 2> g_objectRbt = {Matrix4::makeTranslation(Cvec3(-object_displacement, 0, 0)),
-                                             Matrix4::makeTranslation(Cvec3(object_displacement, 0,
-                                                                            0))};  // currently only 1 obj is defined
+static std::array<RigTForm, 2> g_objectRbt = {RigTForm{Cvec3(-object_displacement, 0, 0)},
+                                              RigTForm{Cvec3(object_displacement, 0,
+                                                             0)}};  // currently only 1 obj is defined
 static std::array<Cvec3f, 2> g_objectColors = {Cvec3f(1, 0, 0), Cvec3f(0, 0, 1)};
 
 
@@ -195,7 +196,7 @@ namespace asd {
     };
     struct manipulation_setting {
         bool can_manipulate = false;
-        Matrix4 respect_frame;
+        RigTForm respect_frame;
     };
 }
 
@@ -205,7 +206,7 @@ static bool do_skysky = false;
 
 ///////////////// END OF G L O B A L S //////////////////////////////////////////////////
 
-auto& get_rbt(asd::object_enum view_mode) {
+auto &get_rbt(asd::object_enum view_mode) {
     switch (view_mode) {
         case asd::object_enum::sky_camera:
             return g_skyRbt;
@@ -221,10 +222,11 @@ auto& get_rbt(asd::object_enum view_mode) {
 asd::manipulation_setting get_manipulation_setting() {
     if (current_manipulating == asd::object_enum::sky_camera) {
         if (current_camera != asd::object_enum::sky_camera)
-            return asd::manipulation_setting{false, Matrix4{}};
-        return asd::manipulation_setting{true, do_skysky ? g_skyRbt: linFact(g_skyRbt) };
+            return asd::manipulation_setting{false, RigTForm{}};
+        return asd::manipulation_setting{true, do_skysky ? g_skyRbt : linFact(g_skyRbt)};
     } else {
-        return asd::manipulation_setting{true, transFact(get_rbt(::current_manipulating)) * linFact(get_rbt(::current_camera))};
+        return asd::manipulation_setting{true, transFact(get_rbt(::current_manipulating)) *
+                                               linFact(get_rbt(::current_camera))};
     }
 }
 
@@ -252,14 +254,14 @@ static void initCubes() {
 }
 
 // takes a projection matrix and send to the the shaders
-static void sendProjectionMatrix(const ShaderState& curSS, const Matrix4& projMatrix) {
+static void sendProjectionMatrix(const ShaderState &curSS, const Matrix4 &projMatrix) {
     GLfloat glmatrix[16];
     projMatrix.writeToColumnMajorMatrix(glmatrix); // send projection matrix
     safe_glUniformMatrix4fv(curSS.h_uProjMatrix, glmatrix);
 }
 
 // takes MVM and its normal matrix to the shaders
-static void sendModelViewNormalMatrix(const ShaderState& curSS, const Matrix4& MVM, const Matrix4& NMVM) {
+static void sendModelViewNormalMatrix(const ShaderState &curSS, const Matrix4 &MVM, const Matrix4 &NMVM) {
     GLfloat glmatrix[16];
     MVM.writeToColumnMajorMatrix(glmatrix); // send MVM
     safe_glUniformMatrix4fv(curSS.h_uModelViewMatrix, glmatrix);
@@ -280,20 +282,21 @@ static void updateFrustFovY() {
 }
 
 static Matrix4 makeProjectionMatrix() {
-    return Matrix4::makeProjection(g_frustFovY, g_windowWidth / static_cast <double> (g_windowHeight), g_frustNear,
+    return Matrix4::makeProjection(g_frustFovY, g_windowWidth / static_cast <double> (g_windowHeight),
+                                   g_frustNear,
                                    g_frustFar);
 }
 
 static void drawStuff() {
     // short hand for current shader state
-    const ShaderState& curSS = *g_shaderStates[g_activeShader];
+    const ShaderState &curSS = *g_shaderStates[g_activeShader];
 
     // build & send proj. matrix to vshader
     const Matrix4 projmat = makeProjectionMatrix();
     sendProjectionMatrix(curSS, projmat);
 
     // use the skyRbt as the eyeRbt
-    const Matrix4 eyeRbt = []() {
+    const auto eyeRbt = []() {
         switch (current_camera) {
             case asd::object_enum::sky_camera:
                 return g_skyRbt;
@@ -306,7 +309,7 @@ static void drawStuff() {
         }
     }();
 
-    const Matrix4 invEyeRbt = inv(eyeRbt);
+    const auto invEyeRbt = inv(eyeRbt);
 
     const Cvec3 eyeLight1 = Cvec3(invEyeRbt * Cvec4(g_light1, 1)); // g_light1 position in eye coordinates
     const Cvec3 eyeLight2 = Cvec3(invEyeRbt * Cvec4(g_light2, 1)); // g_light2 position in eye coordinates
@@ -316,8 +319,8 @@ static void drawStuff() {
     // draw ground
     // ===========
     //
-    const Matrix4 groundRbt = Matrix4();  // identity
-    Matrix4 MVM = invEyeRbt * groundRbt;
+    const RigTForm groundRbt = RigTForm();  // identity
+    Matrix4 MVM = rigTFormToMatrix((invEyeRbt * groundRbt));
     Matrix4 NMVM = normalMatrix(MVM);
     sendModelViewNormalMatrix(curSS, MVM, NMVM);
     safe_glUniform3f(curSS.h_uColor, 0.1, 0.95, 0.1); // set color
@@ -326,7 +329,7 @@ static void drawStuff() {
     // draw cubes
     // ==========
     for (int i = 0; i < 2; i++) {
-        MVM = invEyeRbt * g_objectRbt[i];
+        MVM = rigTFormToMatrix(invEyeRbt * g_objectRbt[i]);
         NMVM = normalMatrix(MVM);
         sendModelViewNormalMatrix(curSS, MVM, NMVM);
         safe_glUniform3f(curSS.h_uColor, g_objectColors[i][0], g_objectColors[i][1], g_objectColors[i][2]);
@@ -358,43 +361,43 @@ static void motion(const int x, const int y) {
     const double dx = x - g_mouseClickX;
     const double dy = g_windowHeight - y - 1 - g_mouseClickY;
 
-    Matrix4 m;
+    RigTForm rigT;
     if (g_mouseLClickButton && !g_mouseRClickButton) { // left button down?
-        m = Matrix4::makeXRotation(-dy) * Matrix4::makeYRotation(dx);
+        rigT = RigTForm{Quat::makeXRotation(-dy) * Quat::makeYRotation(dx)};
     } else if (g_mouseRClickButton && !g_mouseLClickButton) { // right button down?
-        m = Matrix4::makeTranslation(Cvec3(dx, dy, 0) * 0.01);
+        rigT = RigTForm{Cvec3(dx, dy, 0) * 0.01};
     } else if (g_mouseMClickButton ||
                (g_mouseLClickButton && g_mouseRClickButton)) {  // middle or (left and right) button down?
-        m = Matrix4::makeTranslation(Cvec3(0, 0, -dy) * 0.01);
+        rigT = RigTForm{Cvec3(0, 0, -dy) * 0.01};
     }
 
     if (g_mouseClickDown) {
-        const auto& settings = ::get_manipulation_setting();
-        if (settings.can_manipulate){
-            auto& target_rbt = get_rbt(current_manipulating);
+        const auto &settings = ::get_manipulation_setting();
+        if (settings.can_manipulate) {
+            auto &target_rbt = get_rbt(current_manipulating);
             bool invert_translation = false;
             bool invert_linear = false;
 
-            if (::current_manipulating == asd::object_enum::sky_camera){
+            if (::current_manipulating == asd::object_enum::sky_camera) {
                 if (::current_camera == asd::object_enum::sky_camera && !do_skysky)
                     invert_translation = true;
                 invert_linear = true;
-            }else if (::current_camera == ::current_manipulating){
+            } else if (::current_camera == ::current_manipulating) {
                 invert_linear = true;
 //                invert_translation = true;
             }
 
             {
-                auto trans_part = transFact(m);
-                auto lin_part = linFact(m);
+                auto trans_part = transFact(rigT);
+                auto lin_part = linFact(rigT);
                 if (invert_translation)
                     trans_part = inv(trans_part);
                 if (invert_linear)
                     lin_part = inv(lin_part);
-                m = trans_part * lin_part;
+                rigT = trans_part * lin_part;
             }
 
-            target_rbt = settings.respect_frame * m * inv(settings.respect_frame) * target_rbt;
+            target_rbt = settings.respect_frame * rigT * inv(settings.respect_frame) * target_rbt;
             glutPostRedisplay(); // we always redraw if we changed the scene
         }
     }
@@ -407,7 +410,8 @@ static void motion(const int x, const int y) {
 static void mouse(const int button, const int state, const int x, const int y) {
     g_mouseClickX = x;
     g_mouseClickY =
-            g_windowHeight - y - 1;  // conversion from GLUT window-coordinate-system to OpenGL window-coordinate-system
+            g_windowHeight - y -
+            1;  // conversion from GLUT window-coordinate-system to OpenGL window-coordinate-system
 
     g_mouseLClickButton |= (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN);
     g_mouseRClickButton |= (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN);
@@ -438,8 +442,10 @@ static void keyboard(const unsigned char key, const int x, const int y) {
         case 27:
             exit(0);                                  // ESC
         case 'h':
-            std::cout << " ============== H E L P ==============\n\n" << "h\t\thelp menu\n" << "s\t\tsave screenshot\n"
-                      << "f\t\tToggle flat shading on/off.\n" << "o\t\tCycle object to edit\n" << "v\t\tCycle view\n"
+            std::cout << " ============== H E L P ==============\n\n" << "h\t\thelp menu\n"
+                      << "s\t\tsave screenshot\n"
+                      << "f\t\tToggle flat shading on/off.\n" << "o\t\tCycle object to edit\n"
+                      << "v\t\tCycle view\n"
                       << "drag left mouse to rotate\n" << std::endl;
             break;
         case 's':
@@ -471,7 +477,7 @@ static void keyboard(const unsigned char key, const int x, const int y) {
     glutPostRedisplay();
 }
 
-static void initGlutState(int argc, char* argv[]) {
+static void initGlutState(int argc, char *argv[]) {
     glutInit(&argc, argv);                                  // initialize Glut based on cmd-line args
     glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);  //  RGBA pixel channels and double buffering
     glutInitWindowSize(g_windowWidth, g_windowHeight);      // create a window
@@ -513,7 +519,7 @@ static void initGeometry() {
     initCubes();
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
     try {
         initGlutState(argc, argv);
 
@@ -533,7 +539,7 @@ int main(int argc, char* argv[]) {
 
         glutMainLoop();
         return 0;
-    } catch (const std::runtime_error& e) {
+    } catch (const std::runtime_error &e) {
         std::cout << "Exception caught: " << e.what() << std::endl;
         return -1;
     }
