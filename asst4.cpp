@@ -147,7 +147,7 @@ struct Geometry {
 
 using MyShapeNode = SgGeometryShapeNode<Geometry>;
 
-
+static bool waiting_pick = false;
 static std::shared_ptr<SgRootNode> g_world;
 static std::shared_ptr<SgRbtNode> g_skyNode, g_groundNode, g_robot1Node, g_robot2Node;
 static SgRbtNode *g_currentPickedRbtNode; // used later when you do picking
@@ -361,7 +361,7 @@ static void pick() {
 
     // Uncomment below and comment out the glutPostRedisplay in mouse(...) call back
     // to see result of the pick rendering pass
-    // glutSwapBuffers();
+//     glutSwapBuffers();
 
     //Now set back the clear color
     glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
@@ -480,6 +480,10 @@ static void mouse(const int button, const int state, const int x, const int y) {
 
     g_mouseClickDown = g_mouseLClickButton || g_mouseRClickButton || g_mouseMClickButton;
 
+    if (::waiting_pick && button == GLUT_LEFT_BUTTON){
+        pick();
+        ::waiting_pick = false;
+    }
     glutPostRedisplay();
 }
 
@@ -531,6 +535,9 @@ static void keyboard(const unsigned char key, const int x, const int y) {
             std::cout << "Editing sky eye w.r.t. " << (::do_skysky ? "sky-sky" : "world-sky")
                       << " frame" << std::endl;
             break;
+        }
+        case 'p':{
+            ::waiting_pick = true;
         }
     }
     glutPostRedisplay();
