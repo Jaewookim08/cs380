@@ -16,7 +16,7 @@ class SgNodeVisitor;
 class SgNode : public std::enable_shared_from_this<SgNode>, Noncopyable {
 public:
   virtual bool accept(SgNodeVisitor& vistor) = 0;
-  virtual ~SgNode() {}
+  virtual ~SgNode() = default;
 
   // Two nodes are equal if and only if they're the same, i.e.,
   // having the same in memory address
@@ -39,7 +39,7 @@ protected:
 //
 class SgTransformNode : public SgNode {
 public:
-  virtual bool accept(SgNodeVisitor& visitor);
+  bool accept(SgNodeVisitor& visitor) override;
   virtual RigTForm getRbt() = 0;
 
   void addChild(std::shared_ptr<SgNode> child);
@@ -63,7 +63,7 @@ private:
 //
 class SgShapeNode : public SgNode {
 public:
-  virtual bool accept(SgNodeVisitor& visitor);
+  bool accept(SgNodeVisitor& visitor) override;
 
   virtual Matrix4 getAffineMatrix() = 0;
   virtual void draw(const ShaderState& curSS) = 0;
@@ -133,7 +133,7 @@ public:
                       const Cvec3& translation = Cvec3(0, 0, 0),
                       const Cvec3& eulerAngles = Cvec3(0, 0, 0),
                       const Cvec3& scales = Cvec3(1, 1, 1))
-    : geometry_(geometry)
+    : geometry_(std::move(geometry))
     , color_(color)
     , affineMatrix_(Matrix4::makeTranslation(translation) *
                     Matrix4::makeXRotation(eulerAngles[0]) *

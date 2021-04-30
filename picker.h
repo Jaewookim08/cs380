@@ -13,30 +13,29 @@
 #include "drawer.h"
 
 class Picker : public SgNodeVisitor {
-  std::vector<std::shared_ptr<SgNode> > nodeStack_;
+    std::vector<std::reference_wrapper<SgRbtNode>> m_node_stack;
+    std::vector<SgRbtNode*> m_id_to_rbt_node{nullptr};
 
-  typedef std::map<int, std::shared_ptr<SgRbtNode> > IdToRbtNodeMap;
-  IdToRbtNodeMap idToRbtNode_;
+    bool srgbFrameBuffer_;
 
-  int idCounter_;
-  bool srgbFrameBuffer_;
+    Drawer drawer_;
 
-  Drawer drawer_;
+    Cvec3 idToColor(int id);
 
-  void addToMap(int id, std::shared_ptr<SgRbtNode> node);
-  std::shared_ptr<SgRbtNode> find(int id);
-  Cvec3 idToColor(int id);
-  int colorToId(const PackedPixel& p);
+    int colorToId(const PackedPixel &p);
 
 public:
-  Picker(const RigTForm& initialRbt, const ShaderState& curSS);
+    Picker(const RigTForm &initialRbt, const ShaderState &curSS);
 
-  virtual bool visit(SgTransformNode& node);
-  virtual bool postVisit(SgTransformNode& node);
-  virtual bool visit(SgShapeNode& node);
-  virtual bool postVisit(SgShapeNode& node);
+    bool visit(SgTransformNode &node) override;
 
-  std::shared_ptr<SgRbtNode> getRbtNodeAtXY(int x, int y);
+    bool postVisit(SgTransformNode &node) override;
+
+    bool visit(SgShapeNode &node) override;
+
+    bool postVisit(SgShapeNode &node) override;
+
+    SgRbtNode * getRbtNodeAtXY(int x, int y);
 };
 
 

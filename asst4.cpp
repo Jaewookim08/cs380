@@ -6,6 +6,7 @@
 //
 ////////////////////////////////////////////////////////////////////////
 
+#include <memory>
 #include <vector>
 #include <string>
 #include <memory>
@@ -149,7 +150,7 @@ using MyShapeNode = SgGeometryShapeNode<Geometry>;
 
 static std::shared_ptr<SgRootNode> g_world;
 static std::shared_ptr<SgRbtNode> g_skyNode, g_groundNode, g_robot1Node, g_robot2Node;
-static std::shared_ptr<SgRbtNode> g_currentPickedRbtNode; // used later when you do picking
+static SgRbtNode *g_currentPickedRbtNode; // used later when you do picking
 
 // Vertex buffer and index buffer associated with the ground and cube geometry
 static std::shared_ptr<Geometry> g_ground, g_cube, g_arcball;
@@ -339,9 +340,33 @@ static void drawStuff(const ShaderState &curSS, bool picking) {
         glFlush();
 
         g_currentPickedRbtNode = picker.getRbtNodeAtXY(g_mouseClickX, g_mouseClickY);
-        if (g_currentPickedRbtNode == g_groundNode)
-            g_currentPickedRbtNode = std::shared_ptr<SgRbtNode>();   // set to NULL
+        if (g_currentPickedRbtNode == g_groundNode.get())
+            g_currentPickedRbtNode = nullptr;   // set to NULL
     }
+}
+
+static void pick() {
+    // We need to set the clear color to black, for pick rendering.
+    // so let's save the clear color
+    GLdouble clearColor[4];
+    glGetDoublev(GL_COLOR_CLEAR_VALUE, clearColor);
+
+    glClearColor(0, 0, 0, 0);
+
+    // using PICKING_SHADER as the shader
+    glUseProgram(g_shaderStates[PICKING_SHADER]->program);
+
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    drawStuff(*g_shaderStates[PICKING_SHADER], true);
+
+    // Uncomment below and comment out the glutPostRedisplay in mouse(...) call back
+    // to see result of the pick rendering pass
+    // glutSwapBuffers();
+
+    //Now set back the clear color
+    glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
+
+    checkGlErrors();
 }
 
 static void display() {
@@ -556,7 +581,7 @@ static void initGeometry() {
 
 static void constructRobot(std::shared_ptr<SgTransformNode> base, const Cvec3 &color) {
 
-    const double ARM_LEN = 0.7,
+    const float ARM_LEN = 0.7,
             ARM_THICK = 0.25,
             TORSO_LEN = 1.5,
             TORSO_THICK = 0.25,
@@ -571,8 +596,8 @@ static void constructRobot(std::shared_ptr<SgTransformNode> base, const Cvec3 &c
 
     JointDesc jointDesc[NUM_JOINTS] = {
             {-1}, // torso
-            {0, static_cast<float>(TORSO_WIDTH / 2), static_cast<float>(TORSO_LEN / 2), 0}, // upper right arm
-            {1, static_cast<float>(ARM_LEN),         0,                                 0}, // lower right arm
+            {0, TORSO_WIDTH / 2, (TORSO_LEN / 2), 0}, // upper right arm
+            {1, ARM_LEN,         0,                                 0}, // lower right arm
     };
 
     struct ShapeDesc {
@@ -582,11 +607,11 @@ static void constructRobot(std::shared_ptr<SgTransformNode> base, const Cvec3 &c
     };
 
     ShapeDesc shapeDesc[NUM_SHAPES] = {
-            {0, 0,                     0, 0, static_cast<float>(TORSO_WIDTH), static_cast<float>(TORSO_LEN), static_cast<float>(TORSO_THICK), g_cube}, // torso
-            {1, static_cast<float>(ARM_LEN /
-                                   2), 0, 0, static_cast<float>(ARM_LEN),     static_cast<float>(ARM_THICK), static_cast<float>(ARM_THICK),   g_cube}, // upper right arm
-            {2, static_cast<float>(ARM_LEN /
-                                   2), 0, 0, static_cast<float>(ARM_LEN),     static_cast<float>(ARM_THICK), static_cast<float>(ARM_THICK),   g_cube}, // lower right arm
+            {0, 0,                     0, 0, (TORSO_WIDTH), (TORSO_LEN), (TORSO_THICK), g_cube}, // torso
+            {1, (ARM_LEN /
+                                   2), 0, 0, (ARM_LEN),     (ARM_THICK), (ARM_THICK),   g_cube}, // upper right arm
+            {2, (ARM_LEN /
+                                   2), 0, 0, (ARM_LEN),     (ARM_THICK), (ARM_THICK),   g_cube}, // lower right arm
     };
 
     std::shared_ptr<SgTransformNode> jointNodes[NUM_JOINTS];
@@ -600,14 +625,14 @@ static void constructRobot(std::shared_ptr<SgTransformNode> base, const Cvec3 &c
         }
     }
 
-    for (int i = 0; i < NUM_SHAPES; ++i) {
+    for (auto & i : shapeDesc) {
         std::shared_ptr<MyShapeNode> shape{
-                new MyShapeNode(shapeDesc[i].geometry,
+                new MyShapeNode(i.geometry,
                                 color,
-                                Cvec3(shapeDesc[i].x, shapeDesc[i].y, shapeDesc[i].z),
+                                Cvec3(i.x, i.y, i.z),
                                 Cvec3(0, 0, 0),
-                                Cvec3(shapeDesc[i].sx, shapeDesc[i].sy, shapeDesc[i].sz))};
-        jointNodes[shapeDesc[i].parentJointId]->addChild(shape);
+                                Cvec3(i.sx, i.sy, i.sz))};
+        jointNodes[i.parentJointId]->addChild(shape);
     }
 }
 
@@ -617,8 +642,8 @@ static void initScene() {
     g_skyNode.reset(new SgRbtNode(RigTForm(Cvec3(0.0, 0.25, 4.0))));
 
     g_groundNode.reset(new SgRbtNode());
-    g_groundNode->addChild(std::shared_ptr<MyShapeNode>(
-            new MyShapeNode(g_ground, Cvec3(0.1, 0.95, 0.1))));
+    g_groundNode->addChild(std::make_shared<MyShapeNode>(
+            g_ground, Cvec3(0.1, 0.95, 0.1)));
 
     g_robot1Node.reset(new SgRbtNode(RigTForm(Cvec3(-2, 1, 0))));
     g_robot2Node.reset(new SgRbtNode(RigTForm(Cvec3(2, 1, 0))));
