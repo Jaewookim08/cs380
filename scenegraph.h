@@ -15,21 +15,22 @@ class SgNodeVisitor;
 
 class SgNode : public std::enable_shared_from_this<SgNode>, Noncopyable {
 public:
-  virtual bool accept(SgNodeVisitor& vistor) = 0;
-  virtual ~SgNode() = default;
+    virtual bool accept(SgNodeVisitor &vistor) = 0;
 
-  // Two nodes are equal if and only if they're the same, i.e.,
-  // having the same in memory address
-  bool operator == (const SgNode& other) const {
-    return this == &other;
-  }
+    virtual ~SgNode() = default;
 
-  bool operator != (const SgNode& other) const {
-    return !(*this == other);
-  }
+    // Two nodes are equal if and only if they're the same, i.e.,
+    // having the same in memory address
+    bool operator==(const SgNode &other) const {
+        return this == &other;
+    }
+
+    bool operator!=(const SgNode &other) const {
+        return !(*this == other);
+    }
 
 protected:
-  SgNode() {}
+    SgNode() = default;
 };
 
 //
@@ -39,22 +40,24 @@ protected:
 //
 class SgTransformNode : public SgNode {
 public:
-  bool accept(SgNodeVisitor& visitor) override;
-  virtual RigTForm getRbt() = 0;
+    bool accept(SgNodeVisitor &visitor) override;
 
-  void addChild(std::shared_ptr<SgNode> child);
-  void removeChild(std::shared_ptr<SgNode> child);
+    virtual RigTForm getRbt() = 0;
 
-  int getNumChildren() const {
-    return int(children_.size());
-  }
+    void addChild(std::shared_ptr<SgNode> child);
 
-  std::shared_ptr<SgNode> getChild(int i) {
-    return children_[i];
-  }
+    void removeChild(std::shared_ptr<SgNode> child);
+
+    int getNumChildren() const {
+        return int(children_.size());
+    }
+
+    std::shared_ptr<SgNode> getChild(int i) {
+        return children_[i];
+    }
 
 private:
-  std::vector<std::shared_ptr<SgNode> > children_;
+    std::vector<std::shared_ptr<SgNode> > children_;
 };
 
 //
@@ -63,10 +66,11 @@ private:
 //
 class SgShapeNode : public SgNode {
 public:
-  bool accept(SgNodeVisitor& visitor) override;
+    bool accept(SgNodeVisitor &visitor) override;
 
-  virtual Matrix4 getAffineMatrix() = 0;
-  virtual void draw(const ShaderState& curSS) = 0;
+    virtual Matrix4 getAffineMatrix() = 0;
+
+    virtual void draw(const ShaderState &curSS) = 0;
 };
 
 
@@ -75,18 +79,20 @@ public:
 // will be terminated.
 class SgNodeVisitor {
 public:
-  virtual bool visit(SgTransformNode& node) { return true; }
-  virtual bool visit(SgShapeNode& node) { return true; }
+    virtual bool visit(SgTransformNode &node) { return true; }
 
-  virtual bool postVisit(SgTransformNode& node) { return true; }
-  virtual bool postVisit(SgShapeNode& node) { return true; }
+    virtual bool visit(SgShapeNode &node) { return true; }
+
+    virtual bool postVisit(SgTransformNode &node) { return true; }
+
+    virtual bool postVisit(SgShapeNode &node) { return true; }
 };
 
 
 RigTForm getPathAccumRbt(
-  std::shared_ptr<SgTransformNode> source,
-  std::shared_ptr<SgTransformNode> destination,
-  int offsetFromDestination = 0);
+        SgTransformNode *source,
+        SgTransformNode *destination,
+        int offsetFromDestination = 0);
 
 
 //----------------------------------------------------
@@ -96,59 +102,57 @@ RigTForm getPathAccumRbt(
 // A SgRoot node is a Transform node with identity Rbt
 class SgRootNode : public SgTransformNode {
 public:
-  SgRootNode() {}
+    SgRootNode() {}
 
-  virtual RigTForm getRbt() {
-    return RigTForm();
-  }
+    virtual RigTForm getRbt() {
+        return RigTForm();
+    }
 };
 
 // A SgRbtNode is a Transform node that wraps a RigTForm
 class SgRbtNode : public SgTransformNode {
 public:
-  SgRbtNode(const RigTForm& rbt = RigTForm())
-    : rbt_ (rbt) {}
+    SgRbtNode(const RigTForm &rbt = RigTForm())
+            : rbt_(rbt) {}
 
-  virtual RigTForm getRbt() {
-    return rbt_;
-  }
+    virtual RigTForm getRbt() {
+        return rbt_;
+    }
 
-  void setRbt(const RigTForm& rbt) {
-    rbt_ = rbt;
-  }
+    void setRbt(const RigTForm &rbt) {
+        rbt_ = rbt;
+    }
 
 private:
-  RigTForm rbt_;
+    RigTForm rbt_;
 };
 
 // A SgGeometryShapeNode is a Shape node that wraps a user geometry class
 template<typename Geometry>
 class SgGeometryShapeNode : public SgShapeNode {
-  std::shared_ptr<Geometry> geometry_;
-  Matrix4 affineMatrix_;
-  Cvec3 color_;
+    std::shared_ptr<Geometry> geometry_;
+    Matrix4 affineMatrix_;
+    Cvec3 color_;
 public:
-  SgGeometryShapeNode(std::shared_ptr<Geometry> geometry,
-                      const Cvec3& color,
-                      const Cvec3& translation = Cvec3(0, 0, 0),
-                      const Cvec3& eulerAngles = Cvec3(0, 0, 0),
-                      const Cvec3& scales = Cvec3(1, 1, 1))
-    : geometry_(std::move(geometry))
-    , color_(color)
-    , affineMatrix_(Matrix4::makeTranslation(translation) *
-                    Matrix4::makeXRotation(eulerAngles[0]) *
-                    Matrix4::makeYRotation(eulerAngles[1]) *
-                    Matrix4::makeZRotation(eulerAngles[2]) *
-                    Matrix4::makeScale(scales)) {}
+    SgGeometryShapeNode(std::shared_ptr<Geometry> geometry,
+                        const Cvec3 &color,
+                        const Cvec3 &translation = Cvec3(0, 0, 0),
+                        const Cvec3 &eulerAngles = Cvec3(0, 0, 0),
+                        const Cvec3 &scales = Cvec3(1, 1, 1))
+            : geometry_(std::move(geometry)), color_(color), affineMatrix_(Matrix4::makeTranslation(translation) *
+                                                                           Matrix4::makeXRotation(eulerAngles[0]) *
+                                                                           Matrix4::makeYRotation(eulerAngles[1]) *
+                                                                           Matrix4::makeZRotation(eulerAngles[2]) *
+                                                                           Matrix4::makeScale(scales)) {}
 
-  virtual Matrix4 getAffineMatrix() {
-    return affineMatrix_;
-  }
+    virtual Matrix4 getAffineMatrix() {
+        return affineMatrix_;
+    }
 
-  virtual void draw(const ShaderState& curSS) {
-    safe_glUniform3f(curSS.h_uColor, color_[0], color_[1], color_[2]);
-    geometry_->draw(curSS);
-  }
+    virtual void draw(const ShaderState &curSS) {
+        safe_glUniform3f(curSS.h_uColor, color_[0], color_[1], color_[2]);
+        geometry_->draw(curSS);
+    }
 };
 
 #endif

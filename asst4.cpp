@@ -151,6 +151,7 @@ static bool waiting_pick = false;
 static std::shared_ptr<SgRootNode> g_world;
 static std::shared_ptr<SgRbtNode> g_skyNode, g_groundNode, g_robot1Node, g_robot2Node;
 static SgRbtNode *g_currentPickedRbtNode; // used later when you do picking
+static SgRbtNode *g_eye_node;
 
 // Vertex buffer and index buffer associated with the ground and cube geometry
 static std::shared_ptr<Geometry> g_ground, g_cube, g_arcball;
@@ -158,21 +159,14 @@ static std::shared_ptr<Geometry> g_ground, g_cube, g_arcball;
 // --------- Scene
 
 static const Cvec3 g_light1(2.0, 3.0, 14.0), g_light2(-2, -3.0, -5.0);  // define two lights positions in world space
-static RigTForm g_skyRbt = RigTForm{Cvec3(0.0, 0.25, 4.0)};
 
 static constexpr float object_displacement = 0.8;
-static std::array<RigTForm, 2> g_objectRbt = {RigTForm{Cvec3(-object_displacement, 0, 0)},
-                                              RigTForm{Cvec3(object_displacement, 0,
-                                                             0)}};// currently only 1 obj is defined
 static std::optional<RigTForm> g_arcballRbt;
-static RigTForm g_eyeRbt;
-
-static std::array<Cvec3f, 2> g_objectColors = {Cvec3f(1, 0, 0), Cvec3f(0, 0, 1)};
 
 
 namespace asd {
     enum class object_enum {
-        sky_camera, cube_1, cube_2, COUNT
+        sky_camera, COUNT
     };
     struct manipulation_setting {
         bool can_manipulate = false;
@@ -180,8 +174,6 @@ namespace asd {
     };
 }
 
-static asd::object_enum current_camera = asd::object_enum::sky_camera;
-static asd::object_enum current_manipulating = asd::object_enum::sky_camera;
 static bool do_skysky = false;
 
 
@@ -189,27 +181,23 @@ static double g_arcballScreenRadius = 1.f;
 static double g_arcballScale = 0.001f;
 ///////////////// END OF G L O B A L S //////////////////////////////////////////////////
 
-auto &get_rbt(asd::object_enum view_mode) {
-    switch (view_mode) {
-        case asd::object_enum::sky_camera:
-            return g_skyRbt;
-        case asd::object_enum::cube_1:
-            return g_objectRbt[0];
-        case asd::object_enum::cube_2:
-            return g_objectRbt[1];
-        default:
-            assert(false);
-    }
-};
+
+SgRbtNode *current_manipulating() {
+    if (g_currentPickedRbtNode == nullptr)
+        return g_skyNode.get();
+    return g_currentPickedRbtNode;
+}
 
 asd::manipulation_setting get_manipulation_setting() {
-    if (current_manipulating == asd::object_enum::sky_camera) {
-        if (current_camera != asd::object_enum::sky_camera)
+    if (g_currentPickedRbtNode == nullptr) {
+        if (g_eye_node != g_skyNode.get())
             return asd::manipulation_setting{false, RigTForm{}};
-        return asd::manipulation_setting{true, do_skysky ? g_skyRbt : linFact(g_skyRbt)};
-    } else {
-        return asd::manipulation_setting{true, transFact(get_rbt(::current_manipulating)) *
-                                               linFact(get_rbt(::current_camera))};
+        auto sky_rbt_ref_world = getPathAccumRbt(g_world.get(), g_skyNode.get());
+        return asd::manipulation_setting{true, do_skysky ? sky_rbt_ref_world : linFact(sky_rbt_ref_world)};
+    }
+    else {
+        return asd::manipulation_setting{true, transFact(getPathAccumRbt(g_world.get(), ::current_manipulating())) *
+                                               linFact(getPathAccumRbt(g_world.get(), ::g_eye_node))};
     }
 }
 
@@ -275,34 +263,22 @@ static void drawStuff(const ShaderState &curSS, bool picking) {
     sendProjectionMatrix(curSS, projmat);
 
     // get eyeRbt
-    g_eyeRbt = []() {
-        switch (current_camera) {
-            case asd::object_enum::sky_camera:
-                return g_skyRbt;
-            case asd::object_enum::cube_1:
-                return g_objectRbt[0];
-            case asd::object_enum::cube_2:
-                return g_objectRbt[1];
-            default:
-                assert(false);
-        }
-    }();
+    auto eye_rbt = g_eye_node->getRbt();
 
     // update arcballRbt
     g_arcballRbt = []() -> std::optional<RigTForm> {
-        if (::current_camera == asd::object_enum::sky_camera
-            && ::current_manipulating == asd::object_enum::sky_camera
+        if (::g_eye_node == g_skyNode.get()
+            && ::current_manipulating() == g_skyNode.get()
             && !::do_skysky)
             return RigTForm{};
-        if ((::current_manipulating == asd::object_enum::cube_1
-             || ::current_manipulating == asd::object_enum::cube_2) && ::current_manipulating != ::current_camera)
-            return get_rbt(::current_manipulating);
+        if (::current_manipulating() != g_skyNode.get() && ::current_manipulating() != ::g_eye_node)
+            return getPathAccumRbt(g_world.get(), ::current_manipulating());
         // 위 경우를 제외하고는 rigTForm optional의 값은 없음.
         return {};
     }();
 
 
-    const auto invEyeRbt = inv(g_eyeRbt);
+    const auto invEyeRbt = inv(eye_rbt);
 
     const Cvec3 eyeLight1 = Cvec3(invEyeRbt * Cvec4(g_light1, 1)); // g_light1 position in eye coordinates
     const Cvec3 eyeLight2 = Cvec3(invEyeRbt * Cvec4(g_light2, 1)); // g_light2 position in eye coordinates
@@ -333,15 +309,27 @@ static void drawStuff(const ShaderState &curSS, bool picking) {
             g_arcball->draw(curSS);
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         }
-    } else {
+    }
+    else {
         Picker picker(invEyeRbt, curSS);
         g_world->accept(picker);
 
         glFlush();
 
-        g_currentPickedRbtNode = picker.getRbtNodeAtXY(g_mouseClickX, g_mouseClickY);
-        if (g_currentPickedRbtNode == g_groundNode.get())
+        auto selected = picker.getRbtNodeAtXY(g_mouseClickX, g_mouseClickY);
+        if (selected == g_groundNode.get()) {
             g_currentPickedRbtNode = nullptr;   // set to NULL
+        }
+        else {
+            g_currentPickedRbtNode = selected;
+        }
+
+        if (g_currentPickedRbtNode == nullptr) {
+            std::cout << "No part picked\n";
+        }
+        else {
+            std::cout << "Part picked\n";
+        }
     }
 }
 
@@ -398,9 +386,10 @@ static void motion(const int x, const int y) {
     const auto translation_scale = g_arcballRbt.has_value() ? g_arcballScale : 0.01;
     if (g_mouseLClickButton && !g_mouseRClickButton) { // left button down?
         if (g_arcballRbt.has_value()) {
-            Cvec2 arcball_coord = getScreenSpaceCoord((inv(g_eyeRbt) * g_arcballRbt.value()).getTranslation(),
-                                                      makeProjectionMatrix(), g_frustNear, g_frustFovY,
-                                                      g_windowWidth, g_windowHeight);
+            Cvec2 arcball_coord = getScreenSpaceCoord(
+                    (inv(g_eye_node->getRbt()) * g_arcballRbt.value()).getTranslation(),
+                    makeProjectionMatrix(), g_frustNear, g_frustFovY,
+                    g_windowWidth, g_windowHeight);
 //            std::cout << arcball_coord[0] << " " << arcball_coord[1] << std::endl;
 //            std::cout << x << " " << y << std::endl;
             auto get_vec3 = [](Cvec2 vec2) {
@@ -419,27 +408,31 @@ static void motion(const int x, const int y) {
             rigT = RigTForm{Quat{dot(v1, v2), cross(v1, v2)}};
 //            rigT = RigTForm{Quat::makeXRotation(-dy) * Quat::makeYRotation(dx)};
 
-        } else
+        }
+        else
             rigT = RigTForm{Quat::makeXRotation(-dy) * Quat::makeYRotation(dx)};
-    } else if (g_mouseRClickButton && !g_mouseLClickButton) { // right button down?
+    }
+    else if (g_mouseRClickButton && !g_mouseLClickButton) { // right button down?
         rigT = RigTForm{Cvec3(dx, dy, 0) * translation_scale};
-    } else if (g_mouseMClickButton ||
-               (g_mouseLClickButton && g_mouseRClickButton)) {  // middle or (left and right) button down?
+    }
+    else if (g_mouseMClickButton ||
+             (g_mouseLClickButton && g_mouseRClickButton)) {  // middle or (left and right) button down?
         rigT = RigTForm{Cvec3(0, 0, -dy) * translation_scale};
     }
 
     if (g_mouseClickDown) {
         const auto &settings = ::get_manipulation_setting();
         if (settings.can_manipulate) {
-            auto &target_rbt = get_rbt(current_manipulating);
+            const auto &target_rbt = ::current_manipulating()->getRbt();
             bool invert_translation = false;
             bool invert_linear = false;
 
-            if (::current_manipulating == asd::object_enum::sky_camera) {
-                if (::current_camera == asd::object_enum::sky_camera && !do_skysky)
+            if (::current_manipulating() == ::g_skyNode.get()) {
+                if (::g_eye_node == ::g_skyNode.get() && !do_skysky)
                     invert_translation = true;
                 invert_linear = true;
-            } else if (::current_camera == ::current_manipulating) {
+            }
+            else if (::g_eye_node == ::current_manipulating()) {
                 invert_linear = true;
 //                invert_translation = true;
             }
@@ -454,7 +447,10 @@ static void motion(const int x, const int y) {
                 rigT = trans_part * lin_part;
             }
 
-            target_rbt = settings.respect_frame * rigT * inv(settings.respect_frame) * target_rbt;
+            auto rbt_parent_frame_ref_world = getPathAccumRbt(g_world.get(), ::current_manipulating(), 1);
+            ::current_manipulating()->setRbt(
+                    inv(rbt_parent_frame_ref_world) * settings.respect_frame * rigT * inv(settings.respect_frame) *
+                    rbt_parent_frame_ref_world * target_rbt);
             glutPostRedisplay(); // we always redraw if we changed the scene
         }
     }
@@ -480,8 +476,9 @@ static void mouse(const int button, const int state, const int x, const int y) {
 
     g_mouseClickDown = g_mouseLClickButton || g_mouseRClickButton || g_mouseMClickButton;
 
-    if (::waiting_pick && button == GLUT_LEFT_BUTTON){
+    if (::waiting_pick && button == GLUT_LEFT_BUTTON) {
         pick();
+        std::cout << "Picking mode is off" << std::endl;
         ::waiting_pick = false;
     }
     glutPostRedisplay();
@@ -489,18 +486,6 @@ static void mouse(const int button, const int state, const int x, const int y) {
 
 
 static void keyboard(const unsigned char key, const int x, const int y) {
-    auto object_to_name = [](asd::object_enum object) {
-        switch (object) {
-            case asd::object_enum::sky_camera:
-                return "Sky";
-            case asd::object_enum::cube_1:
-                return "Object 0";
-            case asd::object_enum::cube_2:
-                return "Object 1";
-            default:
-                assert(false);
-        }
-    };
     switch (key) {
         case 27:
             exit(0);                                  // ESC
@@ -518,26 +503,27 @@ static void keyboard(const unsigned char key, const int x, const int y) {
         case 'f':
             g_activeShader ^= 1;
             break;
-        case 'v': {
-            current_camera = asd::object_enum(
-                    (static_cast<int>(current_camera) + 1) % static_cast<int>(asd::object_enum::COUNT));
-            std::cout << "Active eye is " << object_to_name(current_camera) << std::endl;
-            break;
-        }
-        case 'o': {
-            current_manipulating = asd::object_enum(
-                    (static_cast<int>(current_manipulating) + 1) % static_cast<int>(asd::object_enum::COUNT));
-            std::cout << "Active object is " << object_to_name(current_manipulating) << std::endl;
-            break;
-        }
+//        case 'v': {
+//            current_camera = asd::object_enum(
+//                    (static_cast<int>(current_camera) + 1) % static_cast<int>(asd::object_enum::COUNT));
+//            std::cout << "Active eye is " << object_to_name(current_camera) << std::endl;
+//            break;
+//        }
+//        case 'o': {
+//            current_manipulating = asd::object_enum(
+//                    (static_cast<int>(current_manipulating) + 1) % static_cast<int>(asd::object_enum::COUNT));
+//            std::cout << "Active object is " << object_to_name(current_manipulating) << std::endl;
+//            break;
+//        }
         case 'm': {
             ::do_skysky = !do_skysky;
             std::cout << "Editing sky eye w.r.t. " << (::do_skysky ? "sky-sky" : "world-sky")
                       << " frame" << std::endl;
             break;
         }
-        case 'p':{
-            ::waiting_pick = true;
+        case 'p': {
+            ::waiting_pick = !::waiting_pick;
+            std::cout << "Picking mode is " << (::waiting_pick ? "on" : "off") << "\n";
         }
     }
     glutPostRedisplay();
@@ -547,7 +533,7 @@ static void initGlutState(int argc, char *argv[]) {
     glutInit(&argc, argv);                                  // initialize Glut based on cmd-line args
     glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);  //  RGBA pixel channels and double buffering
     glutInitWindowSize(g_windowWidth, g_windowHeight);      // create a window
-    glutCreateWindow("Assignment 2");                       // title the window
+    glutCreateWindow("Assignment 4");                       // title the window
 
     glutDisplayFunc(display);                               // display rendering callback
     glutReshapeFunc(reshape);                               // window reshape callback
@@ -604,7 +590,7 @@ static void constructRobot(std::shared_ptr<SgTransformNode> base, const Cvec3 &c
     JointDesc jointDesc[NUM_JOINTS] = {
             {-1}, // torso
             {0, TORSO_WIDTH / 2, (TORSO_LEN / 2), 0}, // upper right arm
-            {1, ARM_LEN,         0,                                 0}, // lower right arm
+            {1, ARM_LEN,         0,               0}, // lower right arm
     };
 
     struct ShapeDesc {
@@ -614,11 +600,11 @@ static void constructRobot(std::shared_ptr<SgTransformNode> base, const Cvec3 &c
     };
 
     ShapeDesc shapeDesc[NUM_SHAPES] = {
-            {0, 0,                     0, 0, (TORSO_WIDTH), (TORSO_LEN), (TORSO_THICK), g_cube}, // torso
+            {0, 0,   0, 0, (TORSO_WIDTH), (TORSO_LEN), (TORSO_THICK), g_cube}, // torso
             {1, (ARM_LEN /
-                                   2), 0, 0, (ARM_LEN),     (ARM_THICK), (ARM_THICK),   g_cube}, // upper right arm
+                 2), 0, 0, (ARM_LEN),     (ARM_THICK), (ARM_THICK),   g_cube}, // upper right arm
             {2, (ARM_LEN /
-                                   2), 0, 0, (ARM_LEN),     (ARM_THICK), (ARM_THICK),   g_cube}, // lower right arm
+                 2), 0, 0, (ARM_LEN),     (ARM_THICK), (ARM_THICK),   g_cube}, // lower right arm
     };
 
     std::shared_ptr<SgTransformNode> jointNodes[NUM_JOINTS];
@@ -632,7 +618,7 @@ static void constructRobot(std::shared_ptr<SgTransformNode> base, const Cvec3 &c
         }
     }
 
-    for (auto & i : shapeDesc) {
+    for (auto &i : shapeDesc) {
         std::shared_ptr<MyShapeNode> shape{
                 new MyShapeNode(i.geometry,
                                 color,
@@ -681,6 +667,8 @@ int main(int argc, char *argv[]) {
         initShaders();
         initGeometry();
         initScene();
+
+        g_eye_node = g_skyNode.get();
 
         glutMainLoop();
         return 0;

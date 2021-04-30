@@ -32,10 +32,10 @@ bool Picker::postVisit(SgShapeNode &node) {
 
 SgRbtNode *Picker::getRbtNodeAtXY(int x, int y) {
     auto image = std::array<unsigned char, 3>{};
-    glReadPixels(0, 0, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, &image[0]);
+    glReadPixels(x, y, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, &image[0]);
     auto id = colorToId(PackedPixel{image[0], image[1], image[2]});
 
-    return m_id_to_rbt_node.at(id); // return null for now
+    return m_id_to_rbt_node.at(id);
 }
 
 //------------------
