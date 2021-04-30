@@ -160,8 +160,9 @@ static std::shared_ptr<Geometry> g_ground, g_cube, g_arcball;
 
 static const Cvec3 g_light1(2.0, 3.0, 14.0), g_light2(-2, -3.0, -5.0);  // define two lights positions in world space
 
-static constexpr float object_displacement = 0.8;
 static std::optional<RigTForm> g_arcballRbt;
+
+static int camera_index = 0;
 
 
 namespace asd {
@@ -263,7 +264,7 @@ static void drawStuff(const ShaderState &curSS, bool picking) {
     sendProjectionMatrix(curSS, projmat);
 
     // get eyeRbt
-    auto eye_rbt = g_eye_node->getRbt();
+    auto eye_rbt = getPathAccumRbt(g_world.get(), g_eye_node);
 
     // update arcballRbt
     g_arcballRbt = []() -> std::optional<RigTForm> {
@@ -503,12 +504,16 @@ static void keyboard(const unsigned char key, const int x, const int y) {
         case 'f':
             g_activeShader ^= 1;
             break;
-//        case 'v': {
+        case 'v': {
+            constexpr int candidates_count = 3;
+            static const std::array<SgRbtNode*, candidates_count> candidates{::g_skyNode.get(), ::g_robot1Node.get(), ::g_robot2Node.get()};
+            camera_index = (camera_index + 1) % candidates_count;
+            g_eye_node = candidates[camera_index];
 //            current_camera = asd::object_enum(
 //                    (static_cast<int>(current_camera) + 1) % static_cast<int>(asd::object_enum::COUNT));
 //            std::cout << "Active eye is " << object_to_name(current_camera) << std::endl;
-//            break;
-//        }
+            break;
+        }
 //        case 'o': {
 //            current_manipulating = asd::object_enum(
 //                    (static_cast<int>(current_manipulating) + 1) % static_cast<int>(asd::object_enum::COUNT));
