@@ -506,12 +506,10 @@ static void keyboard(const unsigned char key, const int x, const int y) {
             break;
         case 'v': {
             constexpr int candidates_count = 3;
-            static const std::array<SgRbtNode*, candidates_count> candidates{::g_skyNode.get(), ::g_robot1Node.get(), ::g_robot2Node.get()};
+            static const std::array<SgRbtNode *, candidates_count> candidates{::g_skyNode.get(), ::g_robot1Node.get(),
+                                                                              ::g_robot2Node.get()};
             camera_index = (camera_index + 1) % candidates_count;
             g_eye_node = candidates[camera_index];
-//            current_camera = asd::object_enum(
-//                    (static_cast<int>(current_camera) + 1) % static_cast<int>(asd::object_enum::COUNT));
-//            std::cout << "Active eye is " << object_to_name(current_camera) << std::endl;
             break;
         }
 //        case 'o': {
@@ -584,8 +582,8 @@ static void constructRobot(std::shared_ptr<SgTransformNode> base, const Cvec3 &c
             TORSO_LEN = 1.5,
             TORSO_THICK = 0.25,
             TORSO_WIDTH = 1;
-    const int NUM_JOINTS = 3,
-            NUM_SHAPES = 3;
+    const int NUM_JOINTS = 10,
+            NUM_SHAPES = 10;
 
     struct JointDesc {
         int parent;
@@ -594,8 +592,15 @@ static void constructRobot(std::shared_ptr<SgTransformNode> base, const Cvec3 &c
 
     JointDesc jointDesc[NUM_JOINTS] = {
             {-1}, // torso
-            {0, TORSO_WIDTH / 2, (TORSO_LEN / 2), 0}, // upper right arm
-            {1, ARM_LEN,         0,               0}, // lower right arm
+            {0, TORSO_WIDTH / 2,  (TORSO_LEN / 2),  0}, // upper right arm
+            {1, ARM_LEN+0.05f,          0,                0}, // lower right arm
+            {0, -TORSO_WIDTH / 2, (TORSO_LEN / 2),  0}, // upper left arm
+            {3, -ARM_LEN-0.05f,         0,                0}, // lower left arm
+            {0, 0,                TORSO_LEN / 2,    0}, // head
+            {0, TORSO_WIDTH / 2,  -(TORSO_LEN / 2), 0}, // upper right leg
+            {6, 0,                -ARM_LEN-0.05f,         0}, // lower right leg
+            {0, -TORSO_WIDTH / 2, -(TORSO_LEN / 2), 0}, // upper left leg
+            {8, 0,                -ARM_LEN-0.05f,         0}, // lower left leg
     };
 
     struct ShapeDesc {
@@ -605,21 +610,30 @@ static void constructRobot(std::shared_ptr<SgTransformNode> base, const Cvec3 &c
     };
 
     ShapeDesc shapeDesc[NUM_SHAPES] = {
-            {0, 0,   0, 0, (TORSO_WIDTH), (TORSO_LEN), (TORSO_THICK), g_cube}, // torso
+            {0, 0,              0,              0, (TORSO_WIDTH), (TORSO_LEN), (TORSO_THICK), g_cube}, // torso
             {1, (ARM_LEN /
-                 2), 0, 0, (ARM_LEN),     (ARM_THICK), (ARM_THICK),   g_cube}, // upper right arm
+                 2),            0,              0, (ARM_LEN),     (ARM_THICK), (ARM_THICK),   g_cube}, // upper right arm
             {2, (ARM_LEN /
-                 2), 0, 0, (ARM_LEN),     (ARM_THICK), (ARM_THICK),   g_cube}, // lower right arm
+                 2),            0,              0, (ARM_LEN),     (ARM_THICK), (ARM_THICK),   g_cube}, // lower right arm
+            {3, -(ARM_LEN / 2), 0,              0, (ARM_LEN),     (ARM_THICK), (ARM_THICK),   g_cube}, // upper left arm
+            {4, -(ARM_LEN / 2), 0,              0, (ARM_LEN),     (ARM_THICK), (ARM_THICK),   g_cube}, // lower left arm
+            {5, 0,              0.5,            0, 0.3,           0.3,         0.3,           g_arcball}, // head
+            {6, 0,              -(ARM_LEN /
+                                  2),           0, (ARM_THICK),   (ARM_LEN),   (ARM_THICK),   g_cube}, // upper right arm
+            {7, 0,              -(ARM_LEN /
+                                  2),           0, (ARM_THICK),   (ARM_LEN),   (ARM_THICK),   g_cube}, // lower right arm
+            {8, 0,              -(ARM_LEN / 2), 0, (ARM_THICK),   (ARM_LEN),   (ARM_THICK),   g_cube}, // upper left arm
+            {9, 0,              -(ARM_LEN / 2), 0, (ARM_THICK),   (ARM_LEN),   (ARM_THICK),   g_cube}, // lower left arm
     };
 
     std::shared_ptr<SgTransformNode> jointNodes[NUM_JOINTS];
 
     for (int i = 0; i < NUM_JOINTS; ++i) {
-        if (jointDesc[i].parent == -1)
+        if (auto parent = jointDesc[i].parent; parent == -1)
             jointNodes[i] = base;
         else {
             jointNodes[i].reset(new SgRbtNode(RigTForm(Cvec3(jointDesc[i].x, jointDesc[i].y, jointDesc[i].z))));
-            jointNodes[jointDesc[i].parent]->addChild(jointNodes[i]);
+            jointNodes[parent]->addChild(jointNodes[i]);
         }
     }
 
