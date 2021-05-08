@@ -19,6 +19,7 @@
 #else
 
 #   include <GL/glut.h>
+#include <list>
 
 #endif
 
@@ -73,10 +74,10 @@ static int g_activeShader = 0;
 
 static const int PICKING_SHADER = 2; // index of the picking shader is g_shaerFiles
 static const int g_numShaders = 3; // 3 shaders instead of 2
-static const char *const g_shaderFiles[g_numShaders][2] = {{"./shaders/basic-gl3.vshader", "./shaders/diffuse-gl3.fshader"},
+static const char* const g_shaderFiles[g_numShaders][2] = {{"./shaders/basic-gl3.vshader", "./shaders/diffuse-gl3.fshader"},
                                                            {"./shaders/basic-gl3.vshader", "./shaders/solid-gl3.fshader"},
                                                            {"./shaders/basic-gl3.vshader", "./shaders/pick-gl3.fshader"}};
-static const char *const g_shaderFilesGl2[g_numShaders][2] = {{"./shaders/basic-gl2.vshader", "./shaders/diffuse-gl2.fshader"},
+static const char* const g_shaderFilesGl2[g_numShaders][2] = {{"./shaders/basic-gl2.vshader", "./shaders/diffuse-gl2.fshader"},
                                                               {"./shaders/basic-gl2.vshader", "./shaders/solid-gl2.fshader"},
                                                               {"./shaders/basic-gl2.vshader", "./shaders/pick-gl2.fshader"}};
 static std::vector<std::shared_ptr<ShaderState>> g_shaderStates; // our global shader states
@@ -96,11 +97,11 @@ struct VertexPN {
 
     // Define copy constructor and assignment operator from GenericVertex so we can
     // use make* functions from geometrymaker.h
-    VertexPN(const GenericVertex &v) {
+    VertexPN(const GenericVertex& v) {
         *this = v;
     }
 
-    VertexPN &operator=(const GenericVertex &v) {
+    VertexPN& operator=(const GenericVertex& v) {
         p = v.pos;
         n = v.normal;
         return *this;
@@ -111,7 +112,7 @@ struct Geometry {
     GlBufferObject vbo, ibo;
     int vboLen, iboLen;
 
-    Geometry(VertexPN *vtx, unsigned short *idx, int vboLen, int iboLen) {
+    Geometry(VertexPN* vtx, unsigned short* idx, int vboLen, int iboLen) {
         this->vboLen = vboLen;
         this->iboLen = iboLen;
 
@@ -123,7 +124,7 @@ struct Geometry {
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned short) * iboLen, idx, GL_STATIC_DRAW);
     }
 
-    void draw(const ShaderState &curSS) {
+    void draw(const ShaderState& curSS) {
         // Enable the attributes used by our shader
         safe_glEnableVertexAttribArray(curSS.h_aPosition);
         safe_glEnableVertexAttribArray(curSS.h_aNormal);
@@ -146,13 +147,28 @@ struct Geometry {
     }
 };
 
+namespace asd {
+    struct frame {
+        std::vector<RigTForm> rbt_states;
+    };
+    using animation = std::list<frame>;
+}
+
+static asd::animation animation;
+static decltype(animation)::iterator current_frame;
+
+static void load_frame(asd::frame&);
+
+static asd::frame save_frame();
+
+
 using MyShapeNode = SgGeometryShapeNode<Geometry>;
 
 static bool waiting_pick = false;
 static std::shared_ptr<SgRootNode> g_world;
 static std::shared_ptr<SgRbtNode> g_skyNode, g_groundNode, g_robot1Node, g_robot2Node;
-static SgRbtNode *g_currentPickedRbtNode; // used later when you do picking
-static SgRbtNode *g_eye_node;
+static SgRbtNode* g_currentPickedRbtNode; // used later when you do picking
+static SgRbtNode* g_eye_node;
 
 // Vertex buffer and index buffer associated with the ground and cube geometry
 static std::shared_ptr<Geometry> g_ground, g_cube, g_arcball;
@@ -184,7 +200,7 @@ static double g_arcballScale = 0.001f;
 ///////////////// END OF G L O B A L S //////////////////////////////////////////////////
 
 
-SgRbtNode *current_manipulating() {
+SgRbtNode* current_manipulating() {
     if (g_currentPickedRbtNode == nullptr)
         return g_skyNode.get();
     return g_currentPickedRbtNode;
@@ -196,8 +212,7 @@ asd::manipulation_setting get_manipulation_setting() {
             return asd::manipulation_setting{false, RigTForm{}};
         auto sky_rbt_ref_world = getPathAccumRbt(g_world.get(), g_skyNode.get());
         return asd::manipulation_setting{true, do_skysky ? sky_rbt_ref_world : linFact(sky_rbt_ref_world)};
-    }
-    else {
+    } else {
         return asd::manipulation_setting{true, transFact(getPathAccumRbt(g_world.get(), ::current_manipulating())) *
                                                linFact(getPathAccumRbt(g_world.get(), ::g_eye_node))};
     }
@@ -234,7 +249,7 @@ static void initArcball() {
 }
 
 // takes a projection matrix and send to the the shaders
-static void sendProjectionMatrix(const ShaderState &curSS, const Matrix4 &projMatrix) {
+static void sendProjectionMatrix(const ShaderState& curSS, const Matrix4& projMatrix) {
     GLfloat glmatrix[16];
     projMatrix.writeToColumnMajorMatrix(glmatrix); // send projection matrix
     safe_glUniformMatrix4fv(curSS.h_uProjMatrix, glmatrix);
@@ -257,7 +272,7 @@ static Matrix4 makeProjectionMatrix() {
                                    g_frustFar);
 }
 
-static void drawStuff(const ShaderState &curSS, bool picking) {
+static void drawStuff(const ShaderState& curSS, bool picking) {
     // short hand for current shader state
 
     // build & send proj. matrix to vshader
@@ -311,8 +326,7 @@ static void drawStuff(const ShaderState &curSS, bool picking) {
             g_arcball->draw(curSS);
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         }
-    }
-    else {
+    } else {
         Picker picker(invEyeRbt, curSS);
         g_world->accept(picker);
 
@@ -321,15 +335,13 @@ static void drawStuff(const ShaderState &curSS, bool picking) {
         auto selected = picker.getRbtNodeAtXY(g_mouseClickX, g_mouseClickY);
         if (selected == g_groundNode.get()) {
             g_currentPickedRbtNode = nullptr;   // set to NULL
-        }
-        else {
+        } else {
             g_currentPickedRbtNode = selected;
         }
 
         if (g_currentPickedRbtNode == nullptr) {
             std::cout << "No part picked\n";
-        }
-        else {
+        } else {
             std::cout << "Part picked\n";
         }
     }
@@ -410,22 +422,19 @@ static void motion(const int x, const int y) {
             rigT = RigTForm{Quat{dot(v1, v2), cross(v1, v2)}};
 //            rigT = RigTForm{Quat::makeXRotation(-dy) * Quat::makeYRotation(dx)};
 
-        }
-        else
+        } else
             rigT = RigTForm{Quat::makeXRotation(-dy) * Quat::makeYRotation(dx)};
-    }
-    else if (g_mouseRClickButton && !g_mouseLClickButton) { // right button down?
+    } else if (g_mouseRClickButton && !g_mouseLClickButton) { // right button down?
         rigT = RigTForm{Cvec3(dx, dy, 0) * translation_scale};
-    }
-    else if (g_mouseMClickButton ||
-             (g_mouseLClickButton && g_mouseRClickButton)) {  // middle or (left and right) button down?
+    } else if (g_mouseMClickButton ||
+               (g_mouseLClickButton && g_mouseRClickButton)) {  // middle or (left and right) button down?
         rigT = RigTForm{Cvec3(0, 0, -dy) * translation_scale};
     }
 
     if (g_mouseClickDown) {
-        const auto &settings = ::get_manipulation_setting();
+        const auto& settings = ::get_manipulation_setting();
         if (settings.can_manipulate) {
-            const auto &target_rbt = ::current_manipulating()->getRbt();
+            const auto& target_rbt = ::current_manipulating()->getRbt();
             bool invert_translation = false;
             bool invert_linear = false;
 
@@ -433,8 +442,7 @@ static void motion(const int x, const int y) {
                 if (::g_eye_node == ::g_skyNode.get() && !do_skysky)
                     invert_translation = true;
                 invert_linear = true;
-            }
-            else if (::g_eye_node == ::current_manipulating()) {
+            } else if (::g_eye_node == ::current_manipulating()) {
                 invert_linear = true;
 //                invert_translation = true;
             }
@@ -507,8 +515,8 @@ static void keyboard(const unsigned char key, const int x, const int y) {
             break;
         case 'v': {
             constexpr int candidates_count = 3;
-            static const std::array<SgRbtNode *, candidates_count> candidates{::g_skyNode.get(), ::g_robot1Node.get(),
-                                                                              ::g_robot2Node.get()};
+            static const std::array<SgRbtNode*, candidates_count> candidates{::g_skyNode.get(), ::g_robot1Node.get(),
+                                                                             ::g_robot2Node.get()};
             camera_index = (camera_index + 1) % candidates_count;
             g_eye_node = candidates[camera_index];
             break;
@@ -528,12 +536,18 @@ static void keyboard(const unsigned char key, const int x, const int y) {
         case 'p': {
             ::waiting_pick = !::waiting_pick;
             std::cout << "Picking mode is " << (::waiting_pick ? "on" : "off") << "\n";
+            break;
+        }
+        case ' ': {
+            if (::current_frame != animation.end()) {
+
+            }
         }
     }
     glutPostRedisplay();
 }
 
-static void initGlutState(int argc, char *argv[]) {
+static void initGlutState(int argc, char* argv[]) {
     glutInit(&argc, argv);                                  // initialize Glut based on cmd-line args
     glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);  //  RGBA pixel channels and double buffering
     glutInitWindowSize(g_windowWidth, g_windowHeight);      // create a window
@@ -576,7 +590,7 @@ static void initGeometry() {
     initArcball();
 }
 
-static void constructRobot(std::shared_ptr<SgTransformNode> base, const Cvec3 &color) {
+static void constructRobot(std::shared_ptr<SgTransformNode> base, const Cvec3& color) {
 
     const float ARM_LEN = 0.7,
             ARM_THICK = 0.25,
@@ -594,14 +608,14 @@ static void constructRobot(std::shared_ptr<SgTransformNode> base, const Cvec3 &c
     JointDesc jointDesc[NUM_JOINTS] = {
             {-1}, // torso
             {0, TORSO_WIDTH / 2,  (TORSO_LEN / 2),  0}, // upper right arm
-            {1, ARM_LEN+0.05f,          0,                0}, // lower right arm
+            {1, ARM_LEN + 0.05f,  0,                0}, // lower right arm
             {0, -TORSO_WIDTH / 2, (TORSO_LEN / 2),  0}, // upper left arm
-            {3, -ARM_LEN-0.05f,         0,                0}, // lower left arm
+            {3, -ARM_LEN - 0.05f, 0,                0}, // lower left arm
             {0, 0,                TORSO_LEN / 2,    0}, // head
             {0, TORSO_WIDTH / 2,  -(TORSO_LEN / 2), 0}, // upper right leg
-            {6, 0,                -ARM_LEN-0.05f,         0}, // lower right leg
+            {6, 0,                -ARM_LEN - 0.05f, 0}, // lower right leg
             {0, -TORSO_WIDTH / 2, -(TORSO_LEN / 2), 0}, // upper left leg
-            {8, 0,                -ARM_LEN-0.05f,         0}, // lower left leg
+            {8, 0,                -ARM_LEN - 0.05f, 0}, // lower left leg
     };
 
     struct ShapeDesc {
@@ -638,7 +652,7 @@ static void constructRobot(std::shared_ptr<SgTransformNode> base, const Cvec3 &c
         }
     }
 
-    for (auto &i : shapeDesc) {
+    for (auto& i : shapeDesc) {
         std::shared_ptr<MyShapeNode> shape{
                 new MyShapeNode(i.geometry,
                                 color,
@@ -670,7 +684,23 @@ static void initScene() {
     g_world->addChild(g_robot2Node);
 }
 
-int main(int argc, char *argv[]) {
+static void load_frame(asd::frame& frame) {
+    auto nodes_list = dumpSgRbtNodes(::g_world);
+    for (int i = 0; i < nodes_list.size(); i++) {
+        nodes_list[i]->setRbt(frame.rbt_states[i]);
+    }
+}
+
+static asd::frame save_frame() {
+    auto ret = asd::frame{};
+    for (auto&& node: dumpSgRbtNodes(::g_world)) {
+        ret.rbt_states.push_back(node->getRbt());
+    }
+    return ret;
+}
+
+
+int main(int argc, char* argv[]) {
     try {
         initGlutState(argc, argv);
 
@@ -688,11 +718,13 @@ int main(int argc, char *argv[]) {
         initGeometry();
         initScene();
 
+        // My initializations
         g_eye_node = g_skyNode.get();
+        ::current_frame = ::animation.begin();
 
         glutMainLoop();
         return 0;
-    } catch (const std::runtime_error &e) {
+    } catch (const std::runtime_error& e) {
         std::cout << "Exception caught: " << e.what() << std::endl;
         return -1;
     }
