@@ -20,6 +20,7 @@
 
 #   include <GL/glut.h>
 #include <list>
+#include <fstream>
 
 #endif
 
@@ -155,11 +156,80 @@ namespace asd {
 }
 
 static asd::animation animation;
-static decltype(animation)::iterator current_frame;
+static decltype(animation)::iterator current_frame_iter;
 
 static void load_frame(asd::frame&);
 
-static asd::frame save_frame();
+static void load_current_frame_if_defined() {
+    if (::current_frame_iter != animation.end()) {
+        ::load_frame(*::current_frame_iter);
+        std::cout << "loaded frame" << std::endl;
+    }
+}
+
+[[nodiscard]] static asd::frame save_frame();
+
+static void save_animation_to_file(const std::string& filename) {
+    auto file = std::ofstream{filename};
+    auto frame_count = animation.size();
+    auto rbt_count = animation.empty() ? 0 : animation.front().rbt_states.size();
+    file << frame_count << " " << rbt_count << "\n";
+
+    for (auto&& saving_frame: animation) {
+        for (auto&& rbt: saving_frame.rbt_states) {
+            auto t = rbt.getTranslation();
+            for (int i = 0; i < 3; i++)
+                file << t[i] << " ";
+            file << "\n";
+            auto r = rbt.getRotation();
+            for (int i = 0; i < 4; i++)
+                file << r[i] << " ";
+            file << "\n";
+        }
+    }
+    file.close();
+    std::cout << "saved animation to " << filename << std::endl;
+}
+
+static void load_animation_from_file(const std::string& filename) {
+    auto file = std::ifstream{filename};
+    if (!file) {
+        std::cerr << "Failed to open file" << std::endl;
+        return;
+    }
+
+    decltype(animation.size()) frame_count;
+    file >> frame_count;
+    decltype(asd::frame::rbt_states.size()) rbt_count;
+    file >> rbt_count;
+
+    asd::animation new_animation;
+    for (auto frame_index = 0; frame_index < frame_count; frame_index++) {
+        asd::frame new_frame;
+        for (auto rbt_index = 0; rbt_index < rbt_count; rbt_index++) {
+            RigTForm rbt;
+
+            Cvec3 t;
+            for (int i = 0; i < 3; i++)
+                file >> t[i];
+            rbt.setTranslation(t);
+
+            Quat r;
+            for (int i = 0; i < 4; i++)
+                file >> r[i];
+            rbt.setRotation(r);
+
+            new_frame.rbt_states.push_back(rbt);
+        }
+        new_animation.push_back(new_frame);
+    }
+
+    std::cout << "loaded animation from" << filename << std::endl;
+
+    ::animation = new_animation;
+    ::current_frame_iter = animation.begin();
+    ::load_current_frame_if_defined();
+}
 
 
 using MyShapeNode = SgGeometryShapeNode<Geometry>;
@@ -212,7 +282,8 @@ asd::manipulation_setting get_manipulation_setting() {
             return asd::manipulation_setting{false, RigTForm{}};
         auto sky_rbt_ref_world = getPathAccumRbt(g_world.get(), g_skyNode.get());
         return asd::manipulation_setting{true, do_skysky ? sky_rbt_ref_world : linFact(sky_rbt_ref_world)};
-    } else {
+    }
+    else {
         return asd::manipulation_setting{true, transFact(getPathAccumRbt(g_world.get(), ::current_manipulating())) *
                                                linFact(getPathAccumRbt(g_world.get(), ::g_eye_node))};
     }
@@ -326,7 +397,8 @@ static void drawStuff(const ShaderState& curSS, bool picking) {
             g_arcball->draw(curSS);
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         }
-    } else {
+    }
+    else {
         Picker picker(invEyeRbt, curSS);
         g_world->accept(picker);
 
@@ -335,13 +407,15 @@ static void drawStuff(const ShaderState& curSS, bool picking) {
         auto selected = picker.getRbtNodeAtXY(g_mouseClickX, g_mouseClickY);
         if (selected == g_groundNode.get()) {
             g_currentPickedRbtNode = nullptr;   // set to NULL
-        } else {
+        }
+        else {
             g_currentPickedRbtNode = selected;
         }
 
         if (g_currentPickedRbtNode == nullptr) {
             std::cout << "No part picked\n";
-        } else {
+        }
+        else {
             std::cout << "Part picked\n";
         }
     }
@@ -422,12 +496,15 @@ static void motion(const int x, const int y) {
             rigT = RigTForm{Quat{dot(v1, v2), cross(v1, v2)}};
 //            rigT = RigTForm{Quat::makeXRotation(-dy) * Quat::makeYRotation(dx)};
 
-        } else
+        }
+        else
             rigT = RigTForm{Quat::makeXRotation(-dy) * Quat::makeYRotation(dx)};
-    } else if (g_mouseRClickButton && !g_mouseLClickButton) { // right button down?
+    }
+    else if (g_mouseRClickButton && !g_mouseLClickButton) { // right button down?
         rigT = RigTForm{Cvec3(dx, dy, 0) * translation_scale};
-    } else if (g_mouseMClickButton ||
-               (g_mouseLClickButton && g_mouseRClickButton)) {  // middle or (left and right) button down?
+    }
+    else if (g_mouseMClickButton ||
+             (g_mouseLClickButton && g_mouseRClickButton)) {  // middle or (left and right) button down?
         rigT = RigTForm{Cvec3(0, 0, -dy) * translation_scale};
     }
 
@@ -442,7 +519,8 @@ static void motion(const int x, const int y) {
                 if (::g_eye_node == ::g_skyNode.get() && !do_skysky)
                     invert_translation = true;
                 invert_linear = true;
-            } else if (::g_eye_node == ::current_manipulating()) {
+            }
+            else if (::g_eye_node == ::current_manipulating()) {
                 invert_linear = true;
 //                invert_translation = true;
             }
@@ -496,6 +574,17 @@ static void mouse(const int button, const int state, const int x, const int y) {
 
 
 static void keyboard(const unsigned char key, const int x, const int y) {
+    auto add_current_state_to_animation = []() {
+        auto pos = ::current_frame_iter;
+        if (pos != animation.end()) {
+            pos++;
+        }
+        ::current_frame_iter = animation.insert(pos, save_frame());
+        std::cout << "created a frame" << std::endl;
+    };
+
+    const auto save_filename = std::string{"animation.txt"};
+
     switch (key) {
         case 27:
             exit(0);                                  // ESC
@@ -539,9 +628,60 @@ static void keyboard(const unsigned char key, const int x, const int y) {
             break;
         }
         case ' ': {
-            if (::current_frame != animation.end()) {
-
+            load_current_frame_if_defined();
+            break;
+        }
+        case 'u': {
+            if (::current_frame_iter != ::animation.end()) {
+                *::current_frame_iter = ::save_frame();
+                std::cout << "updated frame" << std::endl;
             }
+            else {
+                add_current_state_to_animation();
+            }
+            break;
+        }
+        case '.':
+        case '>': {
+            auto temp_iter = ::current_frame_iter;
+            temp_iter++;
+            if (temp_iter != ::animation.end()) {
+                ::current_frame_iter++;
+                load_current_frame_if_defined();
+            }
+            break;
+        }
+        case ',':
+        case '<': {
+            if (::current_frame_iter != ::animation.begin()) {
+                ::current_frame_iter--;
+                load_current_frame_if_defined();
+            }
+            break;
+        }
+        case 'd': {
+            if (::current_frame_iter != ::animation.end()) {
+                auto curr = ::animation.erase(::current_frame_iter);
+                std::cout << "deleted frame" << std::endl;
+                if (curr != ::animation.begin()) {
+                    curr--;
+                }
+                ::current_frame_iter = curr;
+                load_current_frame_if_defined();
+            }
+            break;
+        }
+        case 'n': {
+            add_current_state_to_animation();
+            break;
+        }
+        case 'i': {
+            load_animation_from_file(save_filename);
+            break;
+        }
+        case 'w': {
+            save_animation_to_file(save_filename);
+            break;
         }
     }
     glutPostRedisplay();
@@ -684,12 +824,15 @@ static void initScene() {
     g_world->addChild(g_robot2Node);
 }
 
+
 static void load_frame(asd::frame& frame) {
     auto nodes_list = dumpSgRbtNodes(::g_world);
     for (int i = 0; i < nodes_list.size(); i++) {
         nodes_list[i]->setRbt(frame.rbt_states[i]);
     }
+    glutPostRedisplay();
 }
+
 
 static asd::frame save_frame() {
     auto ret = asd::frame{};
@@ -720,7 +863,7 @@ int main(int argc, char* argv[]) {
 
         // My initializations
         g_eye_node = g_skyNode.get();
-        ::current_frame = ::animation.begin();
+        ::current_frame_iter = ::animation.begin();
 
         glutMainLoop();
         return 0;
