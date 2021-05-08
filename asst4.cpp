@@ -34,6 +34,7 @@
 #include "scenegraph.h"
 #include "drawer.h"
 #include "picker.h"
+#include "sgutils.h"
 
 // G L O B A L S ///////////////////////////////////////////////////
 
@@ -536,7 +537,7 @@ static void initGlutState(int argc, char *argv[]) {
     glutInit(&argc, argv);                                  // initialize Glut based on cmd-line args
     glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);  //  RGBA pixel channels and double buffering
     glutInitWindowSize(g_windowWidth, g_windowHeight);      // create a window
-    glutCreateWindow("Assignment 4");                       // title the window
+    glutCreateWindow("Assignment 5");                       // title the window
 
     glutDisplayFunc(display);                               // display rendering callback
     glutReshapeFunc(reshape);                               // window reshape callback

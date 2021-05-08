@@ -6,24 +6,26 @@
 #include "scenegraph.h"
 
 struct RbtNodesScanner : public SgNodeVisitor {
-  typedef std::vector<std::shared_ptr<SgRbtNode> > SgRbtNodes;
+    typedef std::vector<SgRbtNode*> SgRbtNodes;
 
-  SgRbtNodes& nodes_;
+    SgRbtNodes &m_nodes;
 
-  RbtNodesScanner(SgRbtNodes& nodes) : nodes_(nodes) {}
+    explicit RbtNodesScanner(SgRbtNodes &nodes) : m_nodes(nodes) {}
 
-  virtual bool visit(SgTransformNode& node) {
-    using namespace std;
-    shared_ptr<SgRbtNode> rbtPtr = dynamic_pointer_cast<SgRbtNode>(node.shared_from_this());
-    if (rbtPtr)
-      nodes_.push_back(rbtPtr);
-    return true;
-  }
+    bool visit(SgTransformNode &node) override {
+        using namespace std;
+        auto rbtPtr = dynamic_cast<SgRbtNode*>(&node);
+        if (rbtPtr)
+            m_nodes.push_back(rbtPtr);
+        return true;
+    }
 };
 
-inline void dumpSgRbtNodes(std::shared_ptr<SgNode> root, std::vector<std::shared_ptr<SgRbtNode> >& rbtNodes) {
-  RbtNodesScanner scanner(rbtNodes);
-  root->accept(scanner);
+[[nodiscard]] inline std::vector<SgRbtNode *> dumpSgRbtNodes(std::shared_ptr<SgNode> root) {
+    std::vector<SgRbtNode *> rbt_nodes;
+    RbtNodesScanner scanner(rbt_nodes);
+    root->accept(scanner);
+    return rbt_nodes;
 }
 
 
