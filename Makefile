@@ -23,7 +23,7 @@ else
   CXXFLAGS += -g
 endif
 
-CXXFLAGS += -std=c++17
+CXXFLAGS += -std=c++17 # -Wall -Wextra
 
 
 CXX = g++

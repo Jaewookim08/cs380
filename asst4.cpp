@@ -38,6 +38,7 @@
 #include "picker.h"
 #include "sgutils.h"
 
+
 // G L O B A L S ///////////////////////////////////////////////////
 
 // --------- IMPORTANT --------------------------------------------------------
@@ -158,6 +159,12 @@ namespace asd {
 static asd::animation animation;
 static decltype(animation)::iterator current_frame_iter;
 
+static int ms_between_keyframes = 2000;
+static int animated_frames_per_sec = 60;
+
+static bool show_animation_at_time(float t);
+
+static void animate_timer_callback(int ms);
 static void load_frame(asd::frame&);
 
 static void load_current_frame_if_defined() {
@@ -683,6 +690,9 @@ static void keyboard(const unsigned char key, const int x, const int y) {
             save_animation_to_file(save_filename);
             break;
         }
+        case 'y': {
+            ::animate_timer_callback(0);
+        }
     }
     glutPostRedisplay();
 }
@@ -866,9 +876,68 @@ int main(int argc, char* argv[]) {
         ::current_frame_iter = ::animation.begin();
 
         glutMainLoop();
+
         return 0;
     } catch (const std::runtime_error& e) {
         std::cout << "Exception caught: " << e.what() << std::endl;
         return -1;
     }
 }
+
+
+static bool show_animation_at_time(float t) {
+    auto prev_frame_index = static_cast<int>(t) + 1;
+    if (prev_frame_index > static_cast<int>(animation.size()) - 3) {// 0 ~ n-1까지 있으나 1~n-2만 표시.
+        // end animation
+        return true;
+    }
+    else {
+        auto alpha = t - static_cast<float>(prev_frame_index - 1);
+        const auto&[prev_frame, next_frame] = [&]() {
+            auto it = animation.begin();
+            for (int i = 0; i < prev_frame_index; i++) {
+                it++;
+            }
+            auto next_it = it;
+            next_it++;
+            return std::tie(std::as_const(*it), std::as_const(*next_it));
+        }();
+        const auto& prev_rbts = prev_frame.rbt_states;
+        const auto& next_rbts = next_frame.rbt_states;
+        auto interpolated_frame = asd::frame{};
+
+        for (auto i = 0; i < prev_rbts.size(); i++) {
+            auto& rbt0 = prev_rbts[i];
+            auto& rbt1 = next_rbts[i];
+
+            auto interpolated_translation = rbt0.getTranslation() * (1 - alpha) + rbt1.getTranslation() * alpha;
+            auto interpolated_rotation = slerp(rbt0.getRotation(), rbt1.getRotation(), alpha);
+            interpolated_frame.rbt_states.emplace_back(interpolated_translation,
+                                                       interpolated_rotation); // RigTForm(Cvec3, Quat)
+        }
+        load_frame(interpolated_frame);
+        return false;
+    }
+}
+
+
+static void animate_timer_callback(int ms) {
+    float t = static_cast<float>(ms) / static_cast<float>(ms_between_keyframes);
+
+    bool endReached = show_animation_at_time(t);
+    if (!endReached) {
+        auto dt = 1000 / animated_frames_per_sec;
+        glutTimerFunc(dt, animate_timer_callback, ms + dt);
+    }
+    else {
+        std::cout << "Animation ended" << std::endl;
+        ::current_frame_iter = [&](){
+            auto it = animation.end();
+            for (int i = 0; i < 2; i++)
+                it--;
+            return it;
+        }();
+        ::load_current_frame_if_defined();
+    }
+}
+

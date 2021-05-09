@@ -5,8 +5,8 @@
 #include <cassert>
 #include <cmath>
 
-#include "cvec.h"
-#include "matrix4.h"
+//#include "cvec.h"
+//#include "matrix4.h"
 
 // Forward declarations used in the definition of Quat;
 class Quat;
@@ -161,26 +161,33 @@ inline Matrix4 quatToMatrix(const Quat& q) {
     return r;
 }
 
-inline Quat cn(const Quat& q) {
-    (q[0] < 0) ? q : q * -1;
+static Quat cn(const Quat& q) {
+    return (q[0] < 0) ? q * -1 : q;
 }
 
-Quat pow(const Quat& q, double exponent) {
-    auto normalized = normalize(q);
-    auto half_theta = std::acos(normalized[0]);
+static Quat pow(const Quat& q, double exponent) {
+    auto k = Cvec3{q[1], q[2], q[3]};
+    if (norm2(k) < 0.001) {
+        return Quat{};
+    }
+    k.normalize();
+    auto sin_val = q[1] / k[0];
+    auto cos_val = q[0];
+
+    auto half_theta = std::atan2(sin_val, cos_val);
 
     auto ret = Quat{};
     ret[0] = std::cos(half_theta * exponent);
     for (int i = 1; i < 4; i++) {
-        ret[1] = normalized[i] / std::sin(half_theta) * std::sin(half_theta * exponent);
+        ret[i] = k[i - 1] * std::sin(half_theta * exponent);
     }
-    return cn(ret);
+//    assert(norm2(ret) > CS175_EPS2);
+    return ret;
 }
 
-Quat slerp(Quat q0, Quat q1, float alpha){
-    pow(cn(q1 * inv(q0)), alpha) * q0;
+static Quat slerp(Quat q0, Quat q1, float alpha) {
+    return pow(cn(q1 * inv(q0)), alpha) * q0;
 }
-
 
 
 #endif
