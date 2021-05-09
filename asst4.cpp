@@ -159,12 +159,17 @@ namespace asd {
 static asd::animation animation;
 static decltype(animation)::iterator current_frame_iter;
 
+static bool is_animation_playing = false;
+static bool animation_stop_requested = false;
+
+
 static int ms_between_keyframes = 2000;
 static int animated_frames_per_sec = 60;
 
 static bool show_animation_at_time(float t);
 
 static void animate_timer_callback(int ms);
+
 static void load_frame(asd::frame&);
 
 static void load_current_frame_if_defined() {
@@ -635,63 +640,117 @@ static void keyboard(const unsigned char key, const int x, const int y) {
             break;
         }
         case ' ': {
-            load_current_frame_if_defined();
+            if (::is_animation_playing) {
+                std::cout << "Cannot operate when playing animation" << std::endl;
+            }
+            else {
+                load_current_frame_if_defined();
+            }
             break;
         }
         case 'u': {
-            if (::current_frame_iter != ::animation.end()) {
-                *::current_frame_iter = ::save_frame();
-                std::cout << "updated frame" << std::endl;
+            if (::is_animation_playing) {
+                std::cout << "Cannot operate when playing animation" << std::endl;
+            }
+            else {
+                if (::current_frame_iter != ::animation.end()) {
+                    *::current_frame_iter = ::save_frame();
+                    std::cout << "updated frame" << std::endl;
+                }
+                else {
+                    add_current_state_to_animation();
+                }
+            }
+            break;
+        }
+        case '.':
+        case '>': {
+            if (::is_animation_playing) {
+                std::cout << "Cannot operate when playing animation" << std::endl;
+            }
+            else {
+                auto temp_iter = ::current_frame_iter;
+                temp_iter++;
+                if (temp_iter != ::animation.end()) {
+                    ::current_frame_iter++;
+                    load_current_frame_if_defined();
+                }
+            }
+            break;
+        }
+        case ',':
+        case '<': {
+            if (::is_animation_playing) {
+                std::cout << "Cannot operate when playing animation" << std::endl;
+            }
+            else {
+                if (::current_frame_iter != ::animation.begin()) {
+                    ::current_frame_iter--;
+                    load_current_frame_if_defined();
+                }
+            }
+            break;
+        }
+        case 'd': {
+            if (::is_animation_playing) {
+                std::cout << "Cannot operate when playing animation" << std::endl;
+            }
+            else {
+                if (::current_frame_iter != ::animation.end()) {
+                    auto curr = ::animation.erase(::current_frame_iter);
+                    std::cout << "deleted frame" << std::endl;
+                    if (curr != ::animation.begin()) {
+                        curr--;
+                    }
+                    ::current_frame_iter = curr;
+                    load_current_frame_if_defined();
+                }
+            }
+
+            break;
+        }
+        case 'n': {
+            if (::is_animation_playing) {
+                std::cout << "Cannot operate when playing animation" << std::endl;
             }
             else {
                 add_current_state_to_animation();
             }
             break;
         }
-        case '.':
-        case '>': {
-            auto temp_iter = ::current_frame_iter;
-            temp_iter++;
-            if (temp_iter != ::animation.end()) {
-                ::current_frame_iter++;
-                load_current_frame_if_defined();
-            }
-            break;
-        }
-        case ',':
-        case '<': {
-            if (::current_frame_iter != ::animation.begin()) {
-                ::current_frame_iter--;
-                load_current_frame_if_defined();
-            }
-            break;
-        }
-        case 'd': {
-            if (::current_frame_iter != ::animation.end()) {
-                auto curr = ::animation.erase(::current_frame_iter);
-                std::cout << "deleted frame" << std::endl;
-                if (curr != ::animation.begin()) {
-                    curr--;
-                }
-                ::current_frame_iter = curr;
-                load_current_frame_if_defined();
-            }
-            break;
-        }
-        case 'n': {
-            add_current_state_to_animation();
-            break;
-        }
         case 'i': {
-            load_animation_from_file(save_filename);
+            if (::is_animation_playing) {
+                std::cout << "Cannot operate when playing animation" << std::endl;
+            }
+            else {
+                load_animation_from_file(save_filename);
+            }
             break;
         }
         case 'w': {
-            save_animation_to_file(save_filename);
+            if (::is_animation_playing) {
+                std::cout << "Cannot operate when playing animation" << std::endl;
+            }
+            else {
+                save_animation_to_file(save_filename);
+            }
             break;
         }
         case 'y': {
-            ::animate_timer_callback(0);
+            if (::is_animation_playing) {
+                if (::animation_stop_requested) {
+                    std::cout << "Animation stop already requested. Please wait..." << std::endl;
+                }
+                else {
+                    ::animation_stop_requested = true;
+                    std::cout << "Stopping animation..." << std::endl;
+                }
+            }
+            else {
+                std::cout << "Playing animation..." << std::endl;
+                ::is_animation_playing = true;
+                ::animate_timer_callback(0);
+            }
         }
     }
     glutPostRedisplay();
@@ -925,13 +984,17 @@ static void animate_timer_callback(int ms) {
     float t = static_cast<float>(ms) / static_cast<float>(ms_between_keyframes);
 
     bool endReached = show_animation_at_time(t);
-    if (!endReached) {
+    if (!::animation_stop_requested && !endReached) {
         auto dt = 1000 / animated_frames_per_sec;
         glutTimerFunc(dt, animate_timer_callback, ms + dt);
     }
     else {
-        std::cout << "Animation ended" << std::endl;
-        ::current_frame_iter = [&](){
+        is_animation_playing = false;
+        animation_stop_requested = false;
+        std::cout << "Finished playing animation." << std::endl;
+        ::current_frame_iter = [&]() {
+            if (animation.size() < 2)
+                return animation.begin();
             auto it = animation.end();
             for (int i = 0; i < 2; i++)
                 it--;
