@@ -751,6 +751,19 @@ static void keyboard(const unsigned char key, const int x, const int y) {
                 ::is_animation_playing = true;
                 ::animate_timer_callback(0);
             }
+            break;
+        }
+        case '-':
+        case '_':{
+            ms_between_keyframes += 100;
+            std::cout << ms_between_keyframes << " ms between keyframes" << std::endl;
+            break;
+        }
+        case '=':
+        case '+':{
+            ms_between_keyframes = std::max(100, ms_between_keyframes - 100);
+            std::cout << ms_between_keyframes << " ms between keyframes" << std::endl;
+            break;
         }
     }
     glutPostRedisplay();
