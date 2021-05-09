@@ -11,15 +11,15 @@
 // Forward declarations used in the definition of Quat;
 class Quat;
 
-double dot(const Quat &q, const Quat &p);
+double dot(const Quat& q, const Quat& p);
 
-double norm2(const Quat &q);
+double norm2(const Quat& q);
 
-Quat inv(const Quat &q);
+Quat inv(const Quat& q);
 
-Quat normalize(const Quat &q);
+Quat normalize(const Quat& q);
 
-Matrix4 quatToMatrix(const Quat &q);
+Matrix4 quatToMatrix(const Quat& q);
 
 class Quat {
     Cvec4 q_;  // layout is: q_[0]==w, q_[1]==x, q_[2]==y, q_[3]==z
@@ -29,7 +29,7 @@ public:
         return q_[i];
     }
 
-    double &operator[](const int i) {
+    double& operator[](const int i) {
         return q_[i];
     }
 
@@ -37,41 +37,41 @@ public:
         return q_[i];
     }
 
-    double &operator()(const int i) {
+    double& operator()(const int i) {
         return q_[i];
     }
 
     Quat() : q_(1, 0, 0, 0) {}
 
-    Quat(const double w, const Cvec3 &v) : q_(w, v[0], v[1], v[2]) {}
+    Quat(const double w, const Cvec3& v) : q_(w, v[0], v[1], v[2]) {}
 
     Quat(const double w, const double x, const double y, const double z) : q_(w, x, y, z) {}
 
-    Quat &operator+=(const Quat &a) {
+    Quat& operator+=(const Quat& a) {
         q_ += a.q_;
         return *this;
     }
 
-    Quat &operator-=(const Quat &a) {
+    Quat& operator-=(const Quat& a) {
         q_ -= a.q_;
         return *this;
     }
 
-    Quat &operator*=(const double a) {
+    Quat& operator*=(const double a) {
         q_ *= a;
         return *this;
     }
 
-    Quat &operator/=(const double a) {
+    Quat& operator/=(const double a) {
         q_ /= a;
         return *this;
     }
 
-    Quat operator+(const Quat &a) const {
+    Quat operator+(const Quat& a) const {
         return Quat(*this) += a;
     }
 
-    Quat operator-(const Quat &a) const {
+    Quat operator-(const Quat& a) const {
         return Quat(*this) -= a;
     }
 
@@ -83,12 +83,12 @@ public:
         return Quat(*this) /= a;
     }
 
-    Quat operator*(const Quat &a) const {
+    Quat operator*(const Quat& a) const {
         const Cvec3 u(q_[1], q_[2], q_[3]), v(a.q_[1], a.q_[2], a.q_[3]);
         return Quat(q_[0] * a.q_[0] - dot(u, v), (v * q_[0] + u * a.q_[0]) + cross(u, v));
     }
 
-    Cvec4 operator*(const Cvec4 &a) const {
+    Cvec4 operator*(const Cvec4& a) const {
         const Quat r = *this * (Quat(0, a[0], a[1], a[2]) * inv(*this));
         return Cvec4(r[1], r[2], r[3], a[3]);
     }
@@ -118,7 +118,7 @@ public:
     }
 };
 
-inline double dot(const Quat &q, const Quat &p) {
+inline double dot(const Quat& q, const Quat& p) {
     double s = 0.0;
     for (int i = 0; i < 4; ++i) {
         s += q(i) * p(i);
@@ -126,21 +126,21 @@ inline double dot(const Quat &q, const Quat &p) {
     return s;
 }
 
-inline double norm2(const Quat &q) {
+inline double norm2(const Quat& q) {
     return dot(q, q);
 }
 
-inline Quat inv(const Quat &q) {
+inline Quat inv(const Quat& q) {
     const double n = norm2(q);
     assert(n > CS175_EPS2);
     return Quat(q(0), -q(1), -q(2), -q(3)) * (1.0 / n);
 }
 
-inline Quat normalize(const Quat &q) {
+inline Quat normalize(const Quat& q) {
     return q / std::sqrt(norm2(q));
 }
 
-inline Matrix4 quatToMatrix(const Quat &q) {
+inline Matrix4 quatToMatrix(const Quat& q) {
     Matrix4 r;
     const double n = norm2(q);
     if (n < CS175_EPS2)
@@ -160,5 +160,27 @@ inline Matrix4 quatToMatrix(const Quat &q) {
     assert(isAffine(r));
     return r;
 }
+
+inline Quat cn(const Quat& q) {
+    (q[0] < 0) ? q : q * -1;
+}
+
+Quat pow(const Quat& q, double exponent) {
+    auto normalized = normalize(q);
+    auto half_theta = std::acos(normalized[0]);
+
+    auto ret = Quat{};
+    ret[0] = std::cos(half_theta * exponent);
+    for (int i = 1; i < 4; i++) {
+        ret[1] = normalized[i] / std::sin(half_theta) * std::sin(half_theta * exponent);
+    }
+    return cn(ret);
+}
+
+Quat slerp(Quat q0, Quat q1, float alpha){
+    pow(cn(q1 * inv(q0)), alpha) * q0;
+}
+
+
 
 #endif
