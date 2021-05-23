@@ -196,7 +196,7 @@ static std::shared_ptr<Geometry> g_ground, g_cube, g_sphere;
 
 // --------- Scene
 
-static const Cvec3 g_light1(2.0, 3.0, 14.0), g_light2(-2, -3.0, -5.0);  // define two lights positions in world space
+static std::shared_ptr<SgRbtNode> g_light1Node, g_light2Node;
 
 static std::unique_ptr<RigTForm> g_arcballRbt;
 
@@ -325,8 +325,11 @@ static void drawStuff(bool picking) {
 
     const auto invEyeRbt = inv(eye_rbt);
 
-    const Cvec3 eyeLight1 = Cvec3(invEyeRbt * Cvec4(g_light1, 1)); // g_light1 position in eye coordinates
-    const Cvec3 eyeLight2 = Cvec3(invEyeRbt * Cvec4(g_light2, 1)); // g_light2 position in eye coordinates
+    Cvec3 light1 = getPathAccumRbt(g_world.get(), g_light1Node.get()).getTranslation();
+    Cvec3 light2 = getPathAccumRbt(g_world.get(), g_light2Node.get()).getTranslation();
+
+    const Cvec3 eyeLight1 = Cvec3(invEyeRbt * Cvec4(light1, 1)); // g_light1 position in eye coordinates
+    const Cvec3 eyeLight2 = Cvec3(invEyeRbt * Cvec4(light2, 1)); // g_light2 position in eye coordinates
     uniforms.put("uLight", eyeLight1);
     uniforms.put("uLight2", eyeLight2);
 
@@ -862,10 +865,18 @@ static void initScene() {
     constructRobot(g_robot1Node, g_redDiffuseMat); // a Red robot
     constructRobot(g_robot2Node, g_blueDiffuseMat); // a Blue robot
 
+//    static const Cvec3 g_light1(2.0, 3.0, 14.0), g_light2(-2, -3.0, -5.0);  // define two lights positions in world space
+    g_light1Node.reset(new SgRbtNode{RigTForm{Cvec3{4., 3., 3.}}});
+    g_light2Node.reset(new SgRbtNode{RigTForm{Cvec3{-4., 1.5, -3.}}});
+    g_light1Node->addChild(std::make_shared<MyShapeNode>(g_sphere, g_lightMat, Cvec3{0,0,0}, Cvec3{0}, Cvec3{0.5} ));
+    g_light2Node->addChild(std::make_shared<MyShapeNode>(g_sphere, g_lightMat, Cvec3{0,0,0}, Cvec3{0}, Cvec3{0.5}));
+
     g_world->addChild(g_skyNode);
     g_world->addChild(g_groundNode);
     g_world->addChild(g_robot1Node);
     g_world->addChild(g_robot2Node);
+    g_world->addChild(g_light1Node);
+    g_world->addChild(g_light2Node);
 }
 
 
