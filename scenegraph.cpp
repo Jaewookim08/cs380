@@ -63,8 +63,8 @@ public:
 };
 
 RigTForm getPathAccumRbt(
-        shared_ptr<SgTransformNode> source,
-        shared_ptr<SgTransformNode> destination,
+        SgTransformNode* source,
+        SgTransformNode* destination,
         int offsetFromDestination) {
 
     RbtAccumVisitor accum(*destination);

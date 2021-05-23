@@ -91,8 +91,8 @@ public:
 
 
 RigTForm getPathAccumRbt(
-        std::shared_ptr<SgTransformNode> source,
-        std::shared_ptr<SgTransformNode> destination,
+        SgTransformNode* source,
+        SgTransformNode* destination,
         int offsetFromDestination = 0);
 
 

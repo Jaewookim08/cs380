@@ -23,7 +23,7 @@ else
   CXXFLAGS += -g
 endif
 
-CXX = g++ 
+CXX = g++
 
 OBJ = $(BASE).o ppm.o glsupport.o scenegraph.o picker.o geometry.o material.o renderstates.o texture.o
 

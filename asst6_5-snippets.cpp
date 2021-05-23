@@ -95,7 +95,7 @@ inline void sendProjectionMatrix(Uniforms& uniforms, const Matrix4& projMatrix) 
 //             const ShaderState& curSS
 //         should probably be replaced with
 //             Uniforms& uniforms
-//         and occurences of `curSS' be replaced with `uniforms'
+//         and occurrences of `curSS' be replaced with `uniforms'
 //=========================================================================
 
 //----------------------
