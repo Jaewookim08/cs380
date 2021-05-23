@@ -1,4 +1,4 @@
-BASE = asst4
+BASE = asst6
 
 all: $(BASE)
 
@@ -23,12 +23,9 @@ else
   CXXFLAGS += -g
 endif
 
-CXXFLAGS += -std=c++17 # -Wall -Wextra
+CXX = g++ 
 
-
-CXX = g++
-
-OBJ = $(BASE).o ppm.o glsupport.o scenegraph.o picker.o
+OBJ = $(BASE).o ppm.o glsupport.o scenegraph.o picker.o geometry.o material.o renderstates.o texture.o
 
 $(BASE): $(OBJ)
 	$(LINK.cpp) -o $@ $^ $(LIBS) -lGLEW 

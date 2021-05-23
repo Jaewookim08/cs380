@@ -362,7 +362,7 @@ static void drawStuff(const ShaderState& curSS, bool picking) {
     const Matrix4 projmat = makeProjectionMatrix();
     sendProjectionMatrix(curSS, projmat);
 
-    // get eyeRbt
+    // get SeyeRbt
     auto eye_rbt = getPathAccumRbt(g_world.get(), g_eye_node);
 
     // update arcballRbt
@@ -754,13 +754,13 @@ static void keyboard(const unsigned char key, const int x, const int y) {
             break;
         }
         case '-':
-        case '_':{
+        case '_': {
             ms_between_keyframes += 100;
             std::cout << ms_between_keyframes << " ms between keyframes" << std::endl;
             break;
         }
         case '=':
-        case '+':{
+        case '+': {
             ms_between_keyframes = std::max(100, ms_between_keyframes - 100);
             std::cout << ms_between_keyframes << " ms between keyframes" << std::endl;
             break;

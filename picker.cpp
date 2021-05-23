@@ -1,47 +1,71 @@
 #include <GL/glew.h>
 
+#include "uniforms.h"
 #include "picker.h"
 
+using namespace std;
 
-Picker::Picker(const RigTForm &initialRbt, const ShaderState &curSS)
-        : drawer_(initialRbt, curSS), srgbFrameBuffer_(!g_Gl2Compatible) {}
+Picker::Picker(const RigTForm& initialRbt, Uniforms& uniforms)
+        : drawer_(initialRbt, uniforms), idCounter_(0), srgbFrameBuffer_(!g_Gl2Compatible) {}
 
-bool Picker::visit(SgTransformNode &node) {
-    if (auto p = dynamic_cast<SgRbtNode *>(&node)) {
-        m_node_stack.emplace_back(*p);
+bool Picker::visit(SgTransformNode& node) {
+    nodeStack_.push_back(node.shared_from_this());
+    return drawer_.visit(node);
+}
+
+bool Picker::postVisit(SgTransformNode& node) {
+    nodeStack_.pop_back();
+    return drawer_.postVisit(node);
+}
+
+bool Picker::visit(SgShapeNode& node) {
+    idCounter_++;
+    for (int i = nodeStack_.size() - 1; i >= 0; --i) {
+        shared_ptr<SgRbtNode> asRbtNode = dynamic_pointer_cast<SgRbtNode>(nodeStack_[i]);
+        if (asRbtNode) {
+            addToMap(idCounter_, asRbtNode);
+            break;
+        }
     }
+    const Cvec3 idColor = idToColor(idCounter_);
+
+    // DEBUG OUTPUT
+    cerr << idCounter_ << " => " << idColor[0] << ' ' << idColor[1] << ' ' << idColor[2] << endl;
+
+    drawer_.getUniforms().put("uIdColor", idColor);
     return drawer_.visit(node);
 }
 
-bool Picker::postVisit(SgTransformNode &node) {
-    m_node_stack.pop_back();
+bool Picker::postVisit(SgShapeNode& node) {
     return drawer_.postVisit(node);
 }
 
-bool Picker::visit(SgShapeNode &node) {
-    auto id = static_cast<int>(m_id_to_rbt_node.size());
-    m_id_to_rbt_node.push_back(&m_node_stack.back().get());
-    auto color = idToColor(id);
-    safe_glUniform3f(drawer_.getCurSS().h_uIdColor, color[0], color[1], color[2]);
-    return drawer_.visit(node);
-}
+shared_ptr<SgRbtNode> Picker::getRbtNodeAtXY(int x, int y) {
+    PackedPixel query;
+    glReadPixels(x, y, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, &query);
+    const int id = colorToId(query);
 
-bool Picker::postVisit(SgShapeNode &node) {
-    return drawer_.postVisit(node);
-}
+    // DEBUG OUTPUT
+    cerr << int(query.r) << ' ' << int(query.g) << ' ' << int(query.b) << " => " << id << endl;
 
-SgRbtNode *Picker::getRbtNodeAtXY(int x, int y) {
-    auto image = std::array<unsigned char, 3>{};
-    glReadPixels(x, y, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, &image[0]);
-    auto id = colorToId(PackedPixel{image[0], image[1], image[2]});
-
-    return m_id_to_rbt_node.at(id);
+    return find(id);
 }
 
 //------------------
 // Helper functions
 //------------------
 //
+void Picker::addToMap(int id, shared_ptr<SgRbtNode> node) {
+    idToRbtNode_[id] = node;
+}
+
+shared_ptr<SgRbtNode> Picker::find(int id) {
+    IdToRbtNodeMap::iterator it = idToRbtNode_.find(id);
+    if (it != idToRbtNode_.end())
+        return it->second;
+    else
+        return shared_ptr<SgRbtNode>(); // set to null
+}
 
 // encode 2^4 = 16 IDs in each of R, G, B channel, for a total of 16^3 number of objects
 static const int NBITS = 4, N = 1 << NBITS, MASK = N - 1;
@@ -64,7 +88,7 @@ Cvec3 Picker::idToColor(int id) {
     }
 }
 
-int Picker::colorToId(const PackedPixel &p) {
+int Picker::colorToId(const PackedPixel& p) {
     const int UNUSED_BITS = 8 - NBITS;
     int id = p.r >> UNUSED_BITS;
     id |= ((p.g >> UNUSED_BITS) << NBITS);

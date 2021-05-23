@@ -5,32 +5,33 @@
 #include <memory>
 #include <stdexcept>
 
-#include "cvec.h"
 #include "matrix4.h"
 #include "rigtform.h"
 #include "glsupport.h" // for Noncopyable
+#include "uniforms.h"
+#include "geometry.h"
 #include "asstcommon.h"
 
 class SgNodeVisitor;
 
 class SgNode : public std::enable_shared_from_this<SgNode>, Noncopyable {
 public:
-    virtual bool accept(SgNodeVisitor &vistor) = 0;
+    virtual bool accept(SgNodeVisitor& vistor) = 0;
 
-    virtual ~SgNode() = default;
+    virtual ~SgNode() {}
 
     // Two nodes are equal if and only if they're the same, i.e.,
     // having the same in memory address
-    bool operator==(const SgNode &other) const {
+    bool operator==(const SgNode& other) const {
         return this == &other;
     }
 
-    bool operator!=(const SgNode &other) const {
+    bool operator!=(const SgNode& other) const {
         return !(*this == other);
     }
 
 protected:
-    SgNode() = default;
+    SgNode() {}
 };
 
 //
@@ -40,7 +41,7 @@ protected:
 //
 class SgTransformNode : public SgNode {
 public:
-    bool accept(SgNodeVisitor &visitor) override;
+    virtual bool accept(SgNodeVisitor& visitor);
 
     virtual RigTForm getRbt() = 0;
 
@@ -49,7 +50,7 @@ public:
     void removeChild(std::shared_ptr<SgNode> child);
 
     int getNumChildren() const {
-        return int(children_.size());
+        return children_.size();
     }
 
     std::shared_ptr<SgNode> getChild(int i) {
@@ -66,11 +67,11 @@ private:
 //
 class SgShapeNode : public SgNode {
 public:
-    bool accept(SgNodeVisitor &visitor) override;
+    virtual bool accept(SgNodeVisitor& visitor);
 
     virtual Matrix4 getAffineMatrix() = 0;
 
-    virtual void draw(const ShaderState &curSS) = 0;
+    virtual void draw(const Uniforms& uniforms) = 0;
 };
 
 
@@ -79,19 +80,19 @@ public:
 // will be terminated.
 class SgNodeVisitor {
 public:
-    virtual bool visit(SgTransformNode &node) { return true; }
+    virtual bool visit(SgTransformNode& node) { return true; }
 
-    virtual bool visit(SgShapeNode &node) { return true; }
+    virtual bool visit(SgShapeNode& node) { return true; }
 
-    virtual bool postVisit(SgTransformNode &node) { return true; }
+    virtual bool postVisit(SgTransformNode& node) { return true; }
 
-    virtual bool postVisit(SgShapeNode &node) { return true; }
+    virtual bool postVisit(SgShapeNode& node) { return true; }
 };
 
 
 RigTForm getPathAccumRbt(
-        SgTransformNode *source,
-        SgTransformNode *destination,
+        std::shared_ptr<SgTransformNode> source,
+        std::shared_ptr<SgTransformNode> destination,
         int offsetFromDestination = 0);
 
 
@@ -112,14 +113,14 @@ public:
 // A SgRbtNode is a Transform node that wraps a RigTForm
 class SgRbtNode : public SgTransformNode {
 public:
-    SgRbtNode(const RigTForm &rbt = RigTForm())
+    SgRbtNode(const RigTForm& rbt = RigTForm())
             : rbt_(rbt) {}
 
     virtual RigTForm getRbt() {
         return rbt_;
     }
 
-    void setRbt(const RigTForm &rbt) {
+    void setRbt(const RigTForm& rbt) {
         rbt_ = rbt;
     }
 
@@ -127,31 +128,43 @@ private:
     RigTForm rbt_;
 };
 
-// A SgGeometryShapeNode is a Shape node that wraps a user geometry class
-template<typename Geometry>
 class SgGeometryShapeNode : public SgShapeNode {
-    std::shared_ptr<Geometry> geometry_;
-    Matrix4 affineMatrix_;
-    Cvec3 color_;
 public:
-    SgGeometryShapeNode(std::shared_ptr<Geometry> geometry,
-                        const Cvec3 &color,
-                        const Cvec3 &translation = Cvec3(0, 0, 0),
-                        const Cvec3 &eulerAngles = Cvec3(0, 0, 0),
-                        const Cvec3 &scales = Cvec3(1, 1, 1))
-            : geometry_(std::move(geometry)), color_(color), affineMatrix_(Matrix4::makeTranslation(translation) *
-                                                                           Matrix4::makeXRotation(eulerAngles[0]) *
-                                                                           Matrix4::makeYRotation(eulerAngles[1]) *
-                                                                           Matrix4::makeZRotation(eulerAngles[2]) *
-                                                                           Matrix4::makeScale(scales)) {}
+    std::shared_ptr<Geometry> geometry;
+    std::shared_ptr<Material> material;
+    Matrix4 affineMatrix;
+
+    SgGeometryShapeNode(std::shared_ptr<Geometry> _geometry,
+                        std::shared_ptr<Material> _material,
+                        const Cvec3& translation = Cvec3(0, 0, 0),
+                        const Cvec3& eulerAngles = Cvec3(0, 0, 0),
+                        const Cvec3& scales = Cvec3(1, 1, 1))
+            : geometry(std::move(_geometry)), material(std::move(_material)),
+              affineMatrix(Matrix4::makeTranslation(translation) *
+                           Matrix4::makeXRotation(eulerAngles[0]) *
+                           Matrix4::makeYRotation(eulerAngles[1]) *
+                           Matrix4::makeZRotation(eulerAngles[2]) *
+                           Matrix4::makeScale(scales)) {}
 
     virtual Matrix4 getAffineMatrix() {
-        return affineMatrix_;
+        return affineMatrix;
     }
 
-    virtual void draw(const ShaderState &curSS) {
-        safe_glUniform3f(curSS.h_uColor, color_[0], color_[1], color_[2]);
-        geometry_->draw(curSS);
+    void setAffineMatrix(const Cvec3& translation = Cvec3(0, 0, 0),
+                         const Cvec3& eulerAngles = Cvec3(0, 0, 0),
+                         const Cvec3& scales = Cvec3(1, 1, 1)) {
+        affineMatrix = Matrix4::makeTranslation(translation) *
+                       Matrix4::makeXRotation(eulerAngles[0]) *
+                       Matrix4::makeYRotation(eulerAngles[1]) *
+                       Matrix4::makeZRotation(eulerAngles[2]) *
+                       Matrix4::makeScale(scales);
+    }
+
+    virtual void draw(const Uniforms& uniforms) {
+        if (g_overridingMaterial)
+            g_overridingMaterial->draw(*geometry, uniforms);
+        else
+            material->draw(*geometry, uniforms);
     }
 };
 

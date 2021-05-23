@@ -13,29 +13,36 @@
 #include "drawer.h"
 
 class Picker : public SgNodeVisitor {
-    std::vector<std::reference_wrapper<SgRbtNode>> m_node_stack;
-    std::vector<SgRbtNode*> m_id_to_rbt_node{nullptr};
+    std::vector<std::shared_ptr<SgNode> > nodeStack_;
 
+    typedef std::map<int, std::shared_ptr<SgRbtNode> > IdToRbtNodeMap;
+    IdToRbtNodeMap idToRbtNode_;
+
+    int idCounter_;
     bool srgbFrameBuffer_;
 
     Drawer drawer_;
 
+    void addToMap(int id, std::shared_ptr<SgRbtNode> node);
+
+    std::shared_ptr<SgRbtNode> find(int id);
+
     Cvec3 idToColor(int id);
 
-    int colorToId(const PackedPixel &p);
+    int colorToId(const PackedPixel& p);
 
 public:
-    Picker(const RigTForm &initialRbt, const ShaderState &curSS);
+    Picker(const RigTForm& initialRbt, Uniforms& uniforms);
 
-    bool visit(SgTransformNode &node) override;
+    virtual bool visit(SgTransformNode& node);
 
-    bool postVisit(SgTransformNode &node) override;
+    virtual bool postVisit(SgTransformNode& node);
 
-    bool visit(SgShapeNode &node) override;
+    virtual bool visit(SgShapeNode& node);
 
-    bool postVisit(SgShapeNode &node) override;
+    virtual bool postVisit(SgShapeNode& node);
 
-    SgRbtNode * getRbtNodeAtXY(int x, int y);
+    std::shared_ptr<SgRbtNode> getRbtNodeAtXY(int x, int y);
 };
 
 

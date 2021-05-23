@@ -3,40 +3,41 @@
 
 #include <vector>
 
+#include "uniforms.h"
 #include "scenegraph.h"
 #include "asstcommon.h"
 
 class Drawer : public SgNodeVisitor {
 protected:
     std::vector<RigTForm> rbtStack_;
-    const ShaderState &curSS_;
+    Uniforms& uniforms_;
 public:
-    Drawer(const RigTForm &initialRbt, const ShaderState &curSS)
-            : rbtStack_(1, initialRbt), curSS_(curSS) {}
+    Drawer(const RigTForm& initialRbt, Uniforms& uniforms)
+            : rbtStack_(1, initialRbt), uniforms_(uniforms) {}
 
-    bool visit(SgTransformNode &node) override {
+    virtual bool visit(SgTransformNode& node) {
         rbtStack_.push_back(rbtStack_.back() * node.getRbt());
         return true;
     }
 
-    bool postVisit(SgTransformNode &node) override {
+    virtual bool postVisit(SgTransformNode& node) {
         rbtStack_.pop_back();
         return true;
     }
 
-    bool visit(SgShapeNode &shapeNode) override {
+    virtual bool visit(SgShapeNode& shapeNode) {
         const Matrix4 MVM = rigTFormToMatrix(rbtStack_.back()) * shapeNode.getAffineMatrix();
-        sendModelViewNormalMatrix(curSS_, MVM, normalMatrix(MVM));
-        shapeNode.draw(curSS_);
+        sendModelViewNormalMatrix(uniforms_, MVM, normalMatrix(MVM));
+        shapeNode.draw(uniforms_);
         return true;
     }
 
-    bool postVisit(SgShapeNode &shapeNode) override {
+    virtual bool postVisit(SgShapeNode& shapeNode) {
         return true;
     }
 
-    [[nodiscard]] const ShaderState &getCurSS() const {
-        return curSS_;
+    Uniforms& getUniforms() {
+        return uniforms_;
     }
 };
 
