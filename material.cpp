@@ -1,5 +1,4 @@
 #include <cassert>
-#include <algorithm>
 #include <string>
 #include <vector>
 #include <sstream>

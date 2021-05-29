@@ -1,4 +1,4 @@
-BASE = asst6
+BASE = asst7
 
 all: $(BASE)
 
@@ -23,6 +23,7 @@ else
   CXXFLAGS += -g
 endif
 
+CXXFLAGS += -std=c++17
 CXX = g++
 
 OBJ = $(BASE).o ppm.o glsupport.o scenegraph.o picker.o geometry.o material.o renderstates.o texture.o
