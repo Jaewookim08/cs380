@@ -93,6 +93,17 @@ namespace asd {
         std::vector<RigTForm> rbt_states;
     };
     using animation = std::list<frame>;
+
+
+    template<class Container, class Func>
+    auto transformed_tuple(const Container& container, Func func) {
+        auto transform_parameters_to_tuple = [&func](auto& ... args) {
+//            decltype((..., func(args)))::asdf;
+            return std::forward_as_tuple(func(args)...);
+        };
+
+        return std::apply(transform_parameters_to_tuple, container);
+    }
 }
 
 static asd::animation animation;
@@ -868,8 +879,8 @@ static void initScene() {
 //    static const Cvec3 g_light1(2.0, 3.0, 14.0), g_light2(-2, -3.0, -5.0);  // define two lights positions in world space
     g_light1Node.reset(new SgRbtNode{RigTForm{Cvec3{4., 3., 3.}}});
     g_light2Node.reset(new SgRbtNode{RigTForm{Cvec3{-4., 1.5, -3.}}});
-    g_light1Node->addChild(std::make_shared<MyShapeNode>(g_sphere, g_lightMat, Cvec3{0,0,0}, Cvec3{0}, Cvec3{0.5} ));
-    g_light2Node->addChild(std::make_shared<MyShapeNode>(g_sphere, g_lightMat, Cvec3{0,0,0}, Cvec3{0}, Cvec3{0.5}));
+    g_light1Node->addChild(std::make_shared<MyShapeNode>(g_sphere, g_lightMat, Cvec3{0, 0, 0}, Cvec3{0}, Cvec3{0.5}));
+    g_light2Node->addChild(std::make_shared<MyShapeNode>(g_sphere, g_lightMat, Cvec3{0, 0, 0}, Cvec3{0}, Cvec3{0.5}));
 
     g_world->addChild(g_skyNode);
     g_world->addChild(g_groundNode);
@@ -929,6 +940,29 @@ int main(int argc, char* argv[]) {
     }
 }
 
+namespace asd {
+    template<class Container, class Func>
+    struct ci_tup {
+        explicit ci_tup(Container& container, std::size_t ind, Func func) : m_container{container}, m_ind{ind},
+                                                                            m_func(func) {}
+
+        Container& m_container;
+        Func m_func;
+
+        const std::size_t m_ind;
+
+        template<int relative>
+        auto get() {
+            return m_func(std::get<relative + 1>(m_container)[m_ind]);
+        }
+
+        template<int relative>
+        [[nodiscard]] auto get() const {
+            return m_func(std::get<relative + 1>(m_container)[m_ind]);
+        }
+    };
+}
+
 
 static bool show_animation_at_time(float t) {
     auto prev_frame_index = static_cast<int>(t) + 1;
@@ -938,27 +972,67 @@ static bool show_animation_at_time(float t) {
     }
     else {
         auto alpha = t - static_cast<float>(prev_frame_index - 1);
-        const auto&[prev_frame, next_frame] = [&]() {
+        const auto& surrounding_frames_tuple = [&]() {
             auto it = animation.begin();
-            for (int i = 0; i < prev_frame_index; i++) {
+            for (int i = 0; i < prev_frame_index - 1; i++) {
                 it++;
             }
-            auto next_it = it;
-            next_it++;
-            return std::tie(*it, *next_it);
+
+            const auto& a = *it++;
+            const auto& b = *it++;
+            const auto& c = *it++;
+            const auto& d = *it;
+            return std::tie(a, b, c, d);
         }();
-        const auto& prev_rbts = prev_frame.rbt_states;
-        const auto& next_rbts = next_frame.rbt_states;
-        auto interpolated_frame = asd::frame{};
+        const auto& surrounding_rbts = asd::transformed_tuple(surrounding_frames_tuple,
+                                                       [](const asd::frame& frame) -> auto& { return frame.rbt_states; });
 
-        for (auto i = 0; i < prev_rbts.size(); i++) {
-            auto& rbt0 = prev_rbts[i];
-            auto& rbt1 = next_rbts[i];
+        const auto rbt_state_size = std::get<0>(surrounding_rbts).size();
 
-            auto interpolated_translation = rbt0.getTranslation() * (1 - alpha) + rbt1.getTranslation() * alpha;
-            auto interpolated_rotation = slerp(rbt0.getRotation(), rbt1.getRotation(), alpha);
-            interpolated_frame.rbt_states.emplace_back(interpolated_translation,
-                                                       interpolated_rotation); // RigTForm(Cvec3, Quat)
+
+        auto interpolated_frame = asd::frame{std::vector<RigTForm>(rbt_state_size)};
+
+
+        for (std::size_t i = 0; i < rbt_state_size; i++) {
+            const auto& interpolated_rotation = [&]() {
+                const auto ci = asd::ci_tup{surrounding_rbts, i, [](const RigTForm& rbt) { return rbt.getRotation(); }};
+//            auto d0 = (1./6.)*(ci.get<1>().getTranslation() - ci.get<0>());
+
+                const auto& c0 = ci.get<0>();
+                const auto& c1 = ci.get<1>();
+
+                const auto& d0 = pow(ci.get<1>() * inv(ci.get<-1>()), 1. / 6.) * ci.get<0>();
+                const auto& e0 = pow(ci.get<2>() * inv(ci.get<0>()), -1. / 6.) * ci.get<1>();
+
+                const auto& f = slerp(c0, d0, alpha);
+                const auto& g = slerp(d0, e0, alpha);
+                const auto& h = slerp(e0, c1, alpha);
+                const auto& m = slerp(f, g, alpha);
+                const auto& n = slerp(g, h, alpha);
+                const auto& ct = slerp(m, n, alpha);
+                return ct;
+            }();
+
+            const auto& interpolated_translation = [&]() {
+                const auto ci = asd::ci_tup{surrounding_rbts, i,
+                                            [](const RigTForm& rbt) { return rbt.getTranslation(); }};
+
+                const auto& d0 = (ci.get<1>() - ci.get<-1>()) * (1. / 6.) + ci.get<0>();
+                const auto& e0 = (ci.get<2>() - ci.get<0>()) * (-1. / 6.) + ci.get<1>();
+
+                return ci.get<0>() * std::pow(1 - alpha, 3) + d0 * (std::pow(1 - alpha, 2) * alpha * 3) +
+                       e0 * (std::pow(alpha, 2) * (1 - alpha) * 3) + ci.get<1>() * std::pow(alpha, 3);
+            }();
+
+//            const auto ci = asd::ci_tup{surrounding_rbts, i,
+//                                        [](const RigTForm& rbt) { return rbt.getTranslation(); }};
+//
+//            const auto& interpolated_translation = ci.get<0>() * (1 - alpha) + ci.get<1>() * alpha;
+//
+//            const auto ci_tmp = asd::ci_tup{surrounding_rbts, i, [](const RigTForm& rbt) { return rbt.getRotation(); }};
+//            auto interpolated_rotation = slerp(ci_tmp.get<0>(), ci_tmp.get<1>(), alpha);
+            interpolated_frame.rbt_states[i] = {interpolated_translation,
+                                                interpolated_rotation}; // RigTForm(Cvec3, Quat)
         }
         load_frame(interpolated_frame);
         return false;
