@@ -37,6 +37,7 @@
 #include "drawer.h"
 #include "picker.h"
 #include "sgutils.h"
+#include "mesh.h"
 
 
 // G L O B A L S ///////////////////////////////////////////////////
@@ -103,6 +104,42 @@ namespace asd {
         };
 
         return std::apply(transform_parameters_to_tuple, container);
+    }
+
+    SimpleGeometryPN transform_to_simpleGeometryPN(Mesh& mesh) {
+        auto mesh_vertex_to_vertexPN = [](Mesh::Vertex from, Cvec3 normal) -> VertexPN {
+            auto ret = VertexPN{};
+            auto cvec3_to_cvec3f = [](Cvec3 cvec3) -> Cvec3f {
+                auto ret = Cvec3f{};
+                for (int i = 0; i < 3; i++) {
+                    ret[i] = static_cast<float>(cvec3[i]);
+                }
+                return ret;
+            };
+            ret.p = cvec3_to_cvec3f(from.getPosition());
+            ret.n = cvec3_to_cvec3f(normal);
+            return ret;
+        };
+
+        auto geometry_vertices = std::vector<VertexPN>{};
+        for (int face_ind = 0; face_ind < mesh.getNumFaces(); face_ind++) {
+            const auto& face = mesh.getFace(face_ind);
+            const auto push_mesh_vertex = [&](int vertex_ind){
+                geometry_vertices.push_back(mesh_vertex_to_vertexPN(face.getVertex(vertex_ind), face.getNormal()));
+            };
+            for (int second_v_ind = 1; second_v_ind < face.getNumVertices() - 1; second_v_ind++) {
+                const auto& v = face.getVertex(second_v_ind);
+                push_mesh_vertex(0);
+                push_mesh_vertex(second_v_ind);
+                push_mesh_vertex(second_v_ind + 1);
+            }
+        }
+        assert(geometry_vertices.size() % 3 == 0);
+
+        auto ret = SimpleGeometryPN{};
+        ret.upload(&geometry_vertices[0], static_cast<int>(geometry_vertices.size()));
+
+        return ret;
     }
 }
 
@@ -222,6 +259,8 @@ namespace asd {
         bool can_manipulate = false;
         RigTForm respect_frame;
     };
+
+
 }
 
 static bool do_skysky = false;
@@ -783,6 +822,9 @@ static void initMaterials() {
 };
 
 static void initGeometry() {
+    auto test_mesh = Mesh{};
+    test_mesh.load("cube.mesh");
+    asd::transform_to_simpleGeometryPN(test_mesh);
     initGround();
     initCubes();
     initSphere();
@@ -985,7 +1027,7 @@ static bool show_animation_at_time(float t) {
             return std::tie(a, b, c, d);
         }();
         const auto& surrounding_rbts = asd::transformed_tuple(surrounding_frames_tuple,
-                                                       [](const asd::frame& frame) -> auto& { return frame.rbt_states; });
+                                                              [](const asd::frame& frame) -> auto& { return frame.rbt_states; });
 
         const auto rbt_state_size = std::get<0>(surrounding_rbts).size();
 
