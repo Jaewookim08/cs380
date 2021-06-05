@@ -74,7 +74,6 @@ static bool g_mouseClickDown = false;    // is the mouse button pressed
 static bool g_mouseLClickButton, g_mouseRClickButton, g_mouseMClickButton;
 static int g_mouseClickX, g_mouseClickY; // coordinates for mouse click event
 
-static const int PICKING_SHADER = 2; // index of the picking shader is g_shaerFiles
 
 static std::shared_ptr<Material> g_redDiffuseMat,
         g_blueDiffuseMat,
@@ -173,6 +172,8 @@ namespace asd {
     static double cube_animation_speed = 0.00005;
 
     static void animate_cube_timer_callback(int ms);
+
+    static void subdivide(Mesh& mesh);
 }
 
 static asd::animation animation;
@@ -276,8 +277,10 @@ static SgRbtNode* g_eye_node;
 // Vertex buffer and index buffer associated with the ground and cube geometry
 static std::shared_ptr<Geometry> g_ground, g_cube, g_sphere, g_mesh_cube;
 
-static Mesh cube_reference_mesh;
+static Mesh cube_reference_mesh{};
 
+static int subdivide_times = 1;
+static bool cube_do_smooth_shading = false;
 
 // --------- Scene
 
@@ -1161,24 +1164,75 @@ static void animate_timer_callback(int ms) {
 }
 
 static void asd::animate_cube_timer_callback(int ms) {
-    constexpr auto d = std::array{1., 2., 3., 4., 5., 6., 7., 8., 9.,};
     auto dt = 30;
 
     auto cube_mesh = cube_reference_mesh; // copy reference mesh
 
     for (int i = 0; i < cube_mesh.getNumVertices(); i++) {
         auto&& v = cube_mesh.getVertex(i);
-        v.setPosition(v.getPosition() * (0.5 * (1.01 + std::sin(ms * (0.7 + i/13.) * cube_animation_speed * dt))));
+        v.setPosition(v.getPosition() * (0.5 * (1.01 + std::sin(ms * (0.7 + i / 13.) * cube_animation_speed * dt))));
     }
-
+    for (int i = 0; i < ::subdivide_times; i++) {
+        subdivide(cube_mesh);
+    }
 
     set_averaged_normals(cube_mesh);
 
-    ::g_cubeShapeNode->geometry.reset(new SimpleGeometryPN{transform_to_simpleGeometryPN(cube_mesh, true)});
+    ::g_cubeShapeNode->geometry.reset(new SimpleGeometryPN{transform_to_simpleGeometryPN(cube_mesh, cube_do_smooth_shading)});
     glutPostRedisplay();
 
 
 //    auto dt = static_cast<unsigned int>(1000. / );
     glutTimerFunc(dt, animate_cube_timer_callback, static_cast<int>(ms) + dt);
+}
+
+void asd::subdivide(Mesh& mesh) {
+
+    // add face-vertices
+    for (int fi = 0; fi < mesh.getNumFaces(); fi++) {
+        auto&& face = mesh.getFace(fi);
+
+        auto accum = Cvec3{};
+        for (int fvi = 0; fvi < face.getNumVertices(); fvi++) {
+            accum += face.getVertex(fvi).getPosition();
+        }
+        accum /= face.getNumVertices();
+        mesh.setNewFaceVertex(face, accum);
+    }
+
+    // add edge-vertices
+    for (int ei = 0; ei < mesh.getNumEdges(); ei++) {
+        auto&& edge = mesh.getEdge(ei);
+        auto const& v1 = edge.getVertex(0).getPosition();
+        auto const& v2 = edge.getVertex(1).getPosition();
+        auto const& vf1 = mesh.getNewFaceVertex(edge.getFace(0));
+        auto const& vf2 = mesh.getNewFaceVertex(edge.getFace(1));
+        auto edge_vertex_pos = Cvec3{(v1 + v2 + vf1 + vf2)} / 4;
+        mesh.setNewEdgeVertex(edge, edge_vertex_pos);
+    }
+
+    // add vertice-vertices
+    for (int vi = 0; vi < mesh.getNumVertices(); vi++) {
+        auto&& vertex = mesh.getVertex(vi);
+        auto it = vertex.getIterator();
+        auto it0 = it;
+        auto nv = 0;
+        auto face_vertex_sum = Cvec3{};
+        auto adjacent_vertex_sum = Cvec3{};
+        do {
+            ++nv;
+            face_vertex_sum += mesh.getNewFaceVertex(it.getFace());
+            adjacent_vertex_sum += it.getVertex().getPosition();
+            ++it;
+        } while (it != it0);
+
+        auto new_v_pos = Cvec3{
+                vertex.getPosition() * (static_cast<double>(nv - 2) / nv) + adjacent_vertex_sum / (nv * nv) +
+                face_vertex_sum / (nv * nv)};
+
+        mesh.setNewVertexVertex(vertex, new_v_pos);
+    }
+
+    mesh.subdivide();
 }
 
