@@ -167,6 +167,10 @@ namespace asd {
 
         return ret;
     }
+
+    static double cube_animation_speed = 0.00005;
+
+    static void animate_cube_timer_callback(int ms);
 }
 
 static asd::animation animation;
@@ -262,11 +266,16 @@ using MyShapeNode = SgGeometryShapeNode;
 static bool waiting_pick = false;
 static std::shared_ptr<SgRootNode> g_world;
 static std::shared_ptr<SgRbtNode> g_skyNode, g_groundNode, g_robot1Node, g_robot2Node, g_cubeNode;
+static std::shared_ptr<MyShapeNode> g_cubeShapeNode;
+
 static SgRbtNode* g_currentPickedRbtNode; // used later when you do picking
 static SgRbtNode* g_eye_node;
 
 // Vertex buffer and index buffer associated with the ground and cube geometry
 static std::shared_ptr<Geometry> g_ground, g_cube, g_sphere, g_mesh_cube;
+
+static Mesh cube_reference_mesh;
+
 
 // --------- Scene
 
@@ -330,12 +339,10 @@ static void initGround() {
     g_ground.reset(new SimpleIndexedGeometryPNTBX(&vtx[0], &idx[0], vbLen, ibLen));
 }
 
-static void initMeshCube() {
-    auto test_mesh = Mesh{};
-    test_mesh.load("cube.mesh");
-    asd::set_averaged_normals(test_mesh);
-    auto geometry = asd::transform_to_simpleGeometryPN(test_mesh, false);
-    g_mesh_cube.reset(new SimpleGeometryPN{std::move(geometry)});
+static void initCubeMesh() {
+    ::cube_reference_mesh = Mesh{};
+    ::cube_reference_mesh.load("cube.mesh");
+    asd::set_averaged_normals(::cube_reference_mesh);
 }
 
 static void initCubes() {
@@ -863,7 +870,6 @@ static void initGeometry() {
     initGround();
     initCubes();
     initSphere();
-    initMeshCube();
 }
 
 static void constructRobot(std::shared_ptr<SgTransformNode> base, std::shared_ptr<Material> material) {
@@ -962,7 +968,8 @@ static void initScene() {
 
 
     g_cubeNode.reset(new SgRbtNode{RigTForm{Cvec3{0, 0, 0}}});
-    g_cubeNode->addChild(std::make_shared<MyShapeNode>(g_mesh_cube, g_cubeMat));
+    g_cubeShapeNode = std::make_shared<MyShapeNode>(g_mesh_cube, g_cubeMat);
+    g_cubeNode->addChild(g_cubeShapeNode);
 
 
     g_world->addChild(g_skyNode);
@@ -1010,10 +1017,13 @@ int main(int argc, char* argv[]) {
         initMaterials();
         initGeometry();
         initScene();
+        initCubeMesh();
 
-        // My initializations
         g_eye_node = g_skyNode.get();
         ::current_frame_iter = ::animation.begin();
+
+        asd::animate_cube_timer_callback(0);
+
 
         glutMainLoop();
 
@@ -1146,5 +1156,25 @@ static void animate_timer_callback(int ms) {
         }();
         ::load_current_frame_if_defined();
     }
+}
+
+static void asd::animate_cube_timer_callback(int ms) {
+    constexpr auto d = std::array{1., 2., 3., 4., 5., 6., 7., 8., 9.,};
+    auto dt = 30;
+
+    auto cube_mesh = cube_reference_mesh; // copy reference mesh
+
+    for (int i = 0; i < cube_mesh.getNumVertices(); i++) {
+        auto&& v = cube_mesh.getVertex(i);
+        v.setPosition(v.getPosition() * (0.5 * (1.01 + std::sin(ms * (0.7 + i/13.) * cube_animation_speed * dt))));
+    }
+    set_averaged_normals(cube_mesh);
+
+    ::g_cubeShapeNode->geometry.reset(new SimpleGeometryPN{transform_to_simpleGeometryPN(cube_mesh, true)});
+    glutPostRedisplay();
+
+
+//    auto dt = static_cast<unsigned int>(1000. / );
+    glutTimerFunc(dt, animate_cube_timer_callback, static_cast<int>(ms) + dt);
 }
 
