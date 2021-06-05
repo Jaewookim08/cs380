@@ -115,18 +115,20 @@ namespace asd {
         }
 
         auto face_num = mesh.getNumFaces();
+        auto vector_adjacent_faces_cnt = std::vector(v_num, 0);
         for (int fi = 0; fi < face_num; fi++) {
             const auto& face = mesh.getFace(fi);
             const auto& face_normal = face.getNormal();
             for (int vi = 0; vi < face.getNumVertices(); vi++) {
                 auto&& v = face.getVertex(vi);
                 v.setNormal(v.getNormal() + face_normal);
+                vector_adjacent_faces_cnt.at(v.getIndex())++;
             }
         }
 
         for (int i = 0; i < v_num; i++) {
             auto&& v = mesh.getVertex(i);
-            v.setNormal(v.getNormal() / 3); // Todo: 면 개수(3) 계산.
+            v.setNormal(v.getNormal() / vector_adjacent_faces_cnt.at(i));
         }
     }
 
@@ -1168,6 +1170,8 @@ static void asd::animate_cube_timer_callback(int ms) {
         auto&& v = cube_mesh.getVertex(i);
         v.setPosition(v.getPosition() * (0.5 * (1.01 + std::sin(ms * (0.7 + i/13.) * cube_animation_speed * dt))));
     }
+
+
     set_averaged_normals(cube_mesh);
 
     ::g_cubeShapeNode->geometry.reset(new SimpleGeometryPN{transform_to_simpleGeometryPN(cube_mesh, true)});
