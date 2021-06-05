@@ -169,9 +169,9 @@ namespace asd {
         return ret;
     }
 
-    static double cube_animation_speed = 0.00005;
+    static double cube_animation_speed = 50;
 
-    static void animate_cube_timer_callback(int ms);
+    static void animate_cube_timer_callback(int step);
 
     static void subdivide(Mesh& mesh);
 }
@@ -279,7 +279,7 @@ static std::shared_ptr<Geometry> g_ground, g_cube, g_sphere, g_mesh_cube;
 
 static Mesh cube_reference_mesh{};
 
-static int subdivide_times = 1;
+static int subdivide_times = 0;
 static bool cube_do_smooth_shading = false;
 
 // --------- Scene
@@ -345,9 +345,16 @@ static void initGround() {
 }
 
 static void initCubeMesh() {
-    ::cube_reference_mesh = Mesh{};
-    ::cube_reference_mesh.load("cube.mesh");
-    asd::set_averaged_normals(::cube_reference_mesh);
+    auto mesh = Mesh{};
+    mesh.load("cube.mesh");
+
+    for (int vi = 0; vi < mesh.getNumVertices(); vi++) {
+        auto&& vertex = mesh.getVertex(vi);
+        vertex.setPosition(vertex.getPosition() * 2);
+    }
+
+    asd::set_averaged_normals(mesh);
+    ::cube_reference_mesh = mesh;
 }
 
 static void initCubes() {
@@ -637,6 +644,12 @@ static void keyboard(const unsigned char key, const int x, const int y) {
     };
 
     const auto save_filename = std::string{"animation.txt"};
+    auto print_subdivision_steps = []() {
+        std::cout << "number of subdivision steps: " << ::subdivide_times << std::endl;
+    };
+    auto print_deform_speed = []() {
+        std::cout << "cube deform speed: " << asd::cube_animation_speed << std::endl;
+    };
 
     switch (key) {
         case 27:
@@ -803,6 +816,31 @@ static void keyboard(const unsigned char key, const int x, const int y) {
             std::cout << ms_between_keyframes << " ms between keyframes" << std::endl;
             break;
         }
+        case 'f': {
+            ::cube_do_smooth_shading = !::cube_do_smooth_shading;
+            std::cout << "smooth shading " << (::cube_do_smooth_shading ? "on" : "off") << std::endl;
+            break;
+        }
+        case '0': {
+            ::subdivide_times = std::min(::subdivide_times + 1, 7);
+            print_subdivision_steps();
+            break;
+        }
+        case '9': {
+            ::subdivide_times = std::max(::subdivide_times - 1, 0);
+            print_subdivision_steps();
+            break;
+        }
+        case '7': {
+            asd::cube_animation_speed /= 2;
+            print_deform_speed();
+            break;
+        }
+        case '8': {
+            asd::cube_animation_speed *= 2;
+            print_deform_speed();
+            break;
+        }
     }
     glutPostRedisplay();
 }
@@ -959,8 +997,8 @@ static void initScene() {
     g_groundNode->addChild(std::make_shared<MyShapeNode>(
             g_ground, g_bumpFloorMat, Cvec3(0, g_groundY, 0)));
 
-    g_robot1Node.reset(new SgRbtNode(RigTForm(Cvec3(-2, 1, 0))));
-    g_robot2Node.reset(new SgRbtNode(RigTForm(Cvec3(2, 1, 0))));
+    g_robot1Node.reset(new SgRbtNode(RigTForm(Cvec3(-6, 1, 0))));
+    g_robot2Node.reset(new SgRbtNode(RigTForm(Cvec3(6, 1, 0))));
 
     constructRobot(g_robot1Node, g_redDiffuseMat); // a Red robot
     constructRobot(g_robot2Node, g_blueDiffuseMat); // a Blue robot
@@ -1163,14 +1201,14 @@ static void animate_timer_callback(int ms) {
     }
 }
 
-static void asd::animate_cube_timer_callback(int ms) {
-    auto dt = 30;
+static void asd::animate_cube_timer_callback(int step) {
+    auto dt = 15;
 
     auto cube_mesh = cube_reference_mesh; // copy reference mesh
 
     for (int i = 0; i < cube_mesh.getNumVertices(); i++) {
         auto&& v = cube_mesh.getVertex(i);
-        v.setPosition(v.getPosition() * (0.5 * (1.01 + std::sin(ms * (0.7 + i / 13.) * cube_animation_speed * dt))));
+        v.setPosition(v.getPosition() * (0.5 * (1.01 + std::sin(0.0001 * step * (0.7 + i / 13.)))));
     }
     for (int i = 0; i < ::subdivide_times; i++) {
         subdivide(cube_mesh);
@@ -1178,12 +1216,13 @@ static void asd::animate_cube_timer_callback(int ms) {
 
     set_averaged_normals(cube_mesh);
 
-    ::g_cubeShapeNode->geometry.reset(new SimpleGeometryPN{transform_to_simpleGeometryPN(cube_mesh, cube_do_smooth_shading)});
+    ::g_cubeShapeNode->geometry.reset(
+            new SimpleGeometryPN{transform_to_simpleGeometryPN(cube_mesh, cube_do_smooth_shading)});
     glutPostRedisplay();
 
 
 //    auto dt = static_cast<unsigned int>(1000. / );
-    glutTimerFunc(dt, animate_cube_timer_callback, static_cast<int>(ms) + dt);
+    glutTimerFunc(dt, animate_cube_timer_callback, static_cast<int>(step + cube_animation_speed * dt));
 }
 
 void asd::subdivide(Mesh& mesh) {
