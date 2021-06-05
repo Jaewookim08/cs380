@@ -81,7 +81,8 @@ static std::shared_ptr<Material> g_redDiffuseMat,
         g_bumpFloorMat,
         g_arcballMat,
         g_pickingMat,
-        g_lightMat;
+        g_lightMat,
+        g_cubeMat;
 
 std::shared_ptr<Material> g_overridingMaterial;
 
@@ -106,7 +107,30 @@ namespace asd {
         return std::apply(transform_parameters_to_tuple, container);
     }
 
-    SimpleGeometryPN transform_to_simpleGeometryPN(Mesh& mesh) {
+    void set_averaged_normals(Mesh& mesh) {
+        auto v_num = mesh.getNumVertices();
+
+        for (int i = 0; i < v_num; i++) {
+            mesh.getVertex(i).setNormal(Cvec3{0, 0, 0});
+        }
+
+        auto face_num = mesh.getNumFaces();
+        for (int fi = 0; fi < face_num; fi++) {
+            const auto& face = mesh.getFace(fi);
+            const auto& face_normal = face.getNormal();
+            for (int vi = 0; vi < face.getNumVertices(); vi++) {
+                auto&& v = face.getVertex(vi);
+                v.setNormal(v.getNormal() + face_normal);
+            }
+        }
+
+        for (int i = 0; i < v_num; i++) {
+            auto&& v = mesh.getVertex(i);
+            v.setNormal(v.getNormal() / 3); // Todo: 면 개수(3) 계산.
+        }
+    }
+
+    SimpleGeometryPN transform_to_simpleGeometryPN(Mesh& mesh, bool do_smooth_shading) {
         auto mesh_vertex_to_vertexPN = [](Mesh::Vertex from, Cvec3 normal) -> VertexPN {
             auto ret = VertexPN{};
             auto cvec3_to_cvec3f = [](Cvec3 cvec3) -> Cvec3f {
@@ -124,8 +148,10 @@ namespace asd {
         auto geometry_vertices = std::vector<VertexPN>{};
         for (int face_ind = 0; face_ind < mesh.getNumFaces(); face_ind++) {
             const auto& face = mesh.getFace(face_ind);
-            const auto push_mesh_vertex = [&](int vertex_ind){
-                geometry_vertices.push_back(mesh_vertex_to_vertexPN(face.getVertex(vertex_ind), face.getNormal()));
+            const auto push_mesh_vertex = [&](int vertex_ind) {
+                auto&& v = face.getVertex(vertex_ind);
+                geometry_vertices.push_back(
+                        mesh_vertex_to_vertexPN(v, do_smooth_shading ? v.getNormal() : face.getNormal()));
             };
             for (int second_v_ind = 1; second_v_ind < face.getNumVertices() - 1; second_v_ind++) {
                 const auto& v = face.getVertex(second_v_ind);
@@ -235,12 +261,12 @@ using MyShapeNode = SgGeometryShapeNode;
 
 static bool waiting_pick = false;
 static std::shared_ptr<SgRootNode> g_world;
-static std::shared_ptr<SgRbtNode> g_skyNode, g_groundNode, g_robot1Node, g_robot2Node;
+static std::shared_ptr<SgRbtNode> g_skyNode, g_groundNode, g_robot1Node, g_robot2Node, g_cubeNode;
 static SgRbtNode* g_currentPickedRbtNode; // used later when you do picking
 static SgRbtNode* g_eye_node;
 
 // Vertex buffer and index buffer associated with the ground and cube geometry
-static std::shared_ptr<Geometry> g_ground, g_cube, g_sphere;
+static std::shared_ptr<Geometry> g_ground, g_cube, g_sphere, g_mesh_cube;
 
 // --------- Scene
 
@@ -302,6 +328,14 @@ static void initGround() {
 
     makePlane(g_groundSize * 2, vtx.begin(), idx.begin());
     g_ground.reset(new SimpleIndexedGeometryPNTBX(&vtx[0], &idx[0], vbLen, ibLen));
+}
+
+static void initMeshCube() {
+    auto test_mesh = Mesh{};
+    test_mesh.load("cube.mesh");
+    asd::set_averaged_normals(test_mesh);
+    auto geometry = asd::transform_to_simpleGeometryPN(test_mesh, false);
+    g_mesh_cube.reset(new SimpleGeometryPN{std::move(geometry)});
 }
 
 static void initCubes() {
@@ -793,6 +827,7 @@ static void initMaterials() {
     // Create some prototype materials
     Material diffuse("./shaders/basic-gl3.vshader", "./shaders/diffuse-gl3.fshader");
     Material solid("./shaders/basic-gl3.vshader", "./shaders/solid-gl3.fshader");
+    Material specular("./shaders/basic-gl3.vshader", "./shaders/specular-gl3.fshader");
 
     // copy diffuse prototype and set red color
     g_redDiffuseMat.reset(new Material(diffuse));
@@ -817,17 +852,18 @@ static void initMaterials() {
     g_lightMat.reset(new Material(solid));
     g_lightMat->getUniforms().put("uColor", Cvec3f(1, 1, 1));
 
+    g_cubeMat.reset(new Material(specular));
+    g_cubeMat->getUniforms().put("uColor", Cvec3f(1, 1, 0));
+
     // pick shader
     g_pickingMat.reset(new Material("./shaders/basic-gl3.vshader", "./shaders/pick-gl3.fshader"));
 };
 
 static void initGeometry() {
-    auto test_mesh = Mesh{};
-    test_mesh.load("cube.mesh");
-    asd::transform_to_simpleGeometryPN(test_mesh);
     initGround();
     initCubes();
     initSphere();
+    initMeshCube();
 }
 
 static void constructRobot(std::shared_ptr<SgTransformNode> base, std::shared_ptr<Material> material) {
@@ -924,18 +960,24 @@ static void initScene() {
     g_light1Node->addChild(std::make_shared<MyShapeNode>(g_sphere, g_lightMat, Cvec3{0, 0, 0}, Cvec3{0}, Cvec3{0.5}));
     g_light2Node->addChild(std::make_shared<MyShapeNode>(g_sphere, g_lightMat, Cvec3{0, 0, 0}, Cvec3{0}, Cvec3{0.5}));
 
+
+    g_cubeNode.reset(new SgRbtNode{RigTForm{Cvec3{0, 0, 0}}});
+    g_cubeNode->addChild(std::make_shared<MyShapeNode>(g_mesh_cube, g_cubeMat));
+
+
     g_world->addChild(g_skyNode);
     g_world->addChild(g_groundNode);
     g_world->addChild(g_robot1Node);
     g_world->addChild(g_robot2Node);
     g_world->addChild(g_light1Node);
     g_world->addChild(g_light2Node);
+    g_world->addChild(g_cubeNode);
 }
 
 
 static void load_frame(asd::frame& frame) {
     auto nodes_list = dumpSgRbtNodes(::g_world);
-    for (int i = 0; i < nodes_list.size(); i++) {
+    for (int i = 0; i < std::min(nodes_list.size(), frame.rbt_states.size()); i++) {
         nodes_list[i]->setRbt(frame.rbt_states[i]);
     }
     glutPostRedisplay();
