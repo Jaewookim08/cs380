@@ -822,7 +822,7 @@ static void keyboard(const unsigned char key, const int x, const int y) {
             break;
         }
         case '0': {
-            ::subdivide_times = std::min(::subdivide_times + 1, 7);
+            ::subdivide_times = std::min(::subdivide_times + 1, 6);
             print_subdivision_steps();
             break;
         }
